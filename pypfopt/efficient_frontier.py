@@ -55,8 +55,8 @@ class EfficientFrontier(base_optimizer.BaseConvexOptimizer):
 
     def __init__(self, expected_returns, cov_matrix, weight_bounds=(0, 1), gamma=0):
         """
-        :param expected_returns: expected returns for each asset. Set to None if
-                                 optimising for volatility only.
+        :param expected_returns: expected returns for each asset. Can be None if
+                                optimising for volatility only (but not recommended).
         :type expected_returns: pd.Series, list, np.ndarray
         :param cov_matrix: covariance of returns for each asset
         :type cov_matrix: pd.DataFrame or np.array
@@ -84,15 +84,19 @@ class EfficientFrontier(base_optimizer.BaseConvexOptimizer):
         else:  # use integer labels
             tickers = list(range(len(expected_returns)))
 
-        if cov_matrix.shape != (len(expected_returns), len(expected_returns)):
-            raise ValueError("Covariance matrix does not match expected returns")
+        if expected_returns is not None:
+            if cov_matrix.shape != (len(expected_returns), len(expected_returns)):
+                raise ValueError("Covariance matrix does not match expected returns")
 
         super().__init__(len(tickers), tickers, weight_bounds)
 
     @staticmethod
     def _validate_expected_returns(expected_returns):
         if expected_returns is None:
-            raise ValueError("expected_returns must be provided")
+            warnings.warn(
+                "No expected returns provided. You may only use ef.min_volatility()"
+            )
+            return None
         elif isinstance(expected_returns, pd.Series):
             return expected_returns.values
         elif isinstance(expected_returns, list):
