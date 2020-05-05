@@ -89,9 +89,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
         cov_slice = cov.loc[cluster_items, cluster_items]
         weights = 1 / np.diag(cov_slice)  # Inverse variance weights
         weights /= weights.sum()
-        w = weights.reshape(-1, 1)
-        cluster_var = np.dot(np.dot(w.T, cov_slice), w)[0, 0]
-        return cluster_var
+        return np.linalg.multi_dot((weights, cov_slice, weights))
 
     @staticmethod
     def _get_quasi_diag(link):
@@ -103,23 +101,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
         :return: sorted list of indices
         :rtype: list
         """
-        link = link.astype(int)
-        # The new clusters formed
-        c = np.arange(link.shape[0]) + link[-1, 3]
-        root_id = c[-1]
-        d = dict(list(zip(c, link[:, 0:2].tolist())))
-
-        # Unpacks the linkage matrix recursively.
-        def recursive_unlink(curr, d):
-            """ Start this with curr = root integer """
-            if curr in d:
-                return [
-                    node for parent in d[curr] for node in recursive_unlink(parent, d)
-                ]
-            else:
-                return [curr]
-
-        return recursive_unlink(root_id, d)
+        return sch.to_tree(link, rd=False).pre_order()
 
     @staticmethod
     def _raw_hrp_allocation(cov, ordered_tickers):
@@ -171,7 +153,10 @@ class HRPOpt(base_optimizer.BaseOptimizer):
 
         # Compute distance matrix, with ClusterWarning fix as
         # per https://stackoverflow.com/questions/18952587/
-        dist = ssd.squareform(((1 - corr) / 2) ** 0.5)
+
+        # this can avoid some nasty floating point issues
+        matrix = np.sqrt(np.clip((1.0 - corr) / 2., a_min=0.0, a_max=1.0))
+        dist = ssd.squareform(matrix, checks=False)
 
         self.clusters = sch.linkage(dist, "single")
         sort_ix = HRPOpt._get_quasi_diag(self.clusters)
