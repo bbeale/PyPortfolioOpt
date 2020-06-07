@@ -8,7 +8,7 @@
         <img src="https://img.shields.io/badge/python-v3-brightgreen.svg"
             alt="python"></a> &nbsp;
     <a href="https://pypi.org/project/PyPortfolioOpt/">
-        <img src="https://img.shields.io/badge/pypi-v1.2.2-brightgreen.svg"
+        <img src="https://img.shields.io/badge/pypi-v1.2.3-brightgreen.svg"
             alt="pypi"></a> &nbsp;
     <a href="https://opensource.org/licenses/MIT">
         <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg"
@@ -72,7 +72,7 @@ Head over to the [documentation on ReadTheDocs](https://pyportfolioopt.readthedo
 If you would like to play with PyPortfolioOpt interactively in your browser, you may launch Binder [here](https://mybinder.org/v2/gh/robertmartin8/pyportfolioopt/master). It takes a
 while to set up, but it lets you try out the cookbook recipes without having to deal with all of the requirements.
 
-*Note: if you are on windows, you first need to installl C++. ([download](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16), [install instructions](https://drive.google.com/file/d/0B4GsMXCRaSSIOWpYQkstajlYZ0tPVkNQSElmTWh1dXFaYkJr/view)*
+*Note: if you are on windows, you first need to installl C++. ([download](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16), [install instructions](https://drive.google.com/file/d/0B4GsMXCRaSSIOWpYQkstajlYZ0tPVkNQSElmTWh1dXFaYkJr/view))*
 
 This project is available on PyPI, meaning that you can just:
 
@@ -205,7 +205,7 @@ As of v1.2.0:
   - Added option to 'properly' compound returns.
   - James-Stein shrinkage estimator
   - CAPM return model.
-- `from pypfopt import Plotting`: moved all plotting functionality into a new class and added
+- `from pypfopt import plotting`: moved all plotting functionality into a new class and added
   new plots. All other plotting functions (scattered in different classes) have been retained,
   but are now deprecated.
 
@@ -274,7 +274,7 @@ The covariance matrix encodes not just the volatility of an asset, but also how 
     <img width=60% src="https://github.com/robertmartin8/PyPortfolioOpt/blob/master/media/corrplot_white.png">
 </p>
 
-(This plot was generated using `Plotting.plot_covariance`)
+(This plot was generated using `plotting.plot_covariance`)
 
 ### Objective functions
 
