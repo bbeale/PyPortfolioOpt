@@ -5,7 +5,7 @@ Black-Litterman Allocation
 ##########################
 
 The Black-Litterman (BL) model [1]_ takes a Bayesian approach to asset allocation.
-Specifically, it combines a **prior** estimate of returns (canonically, the market-implied
+Specifically, it combines a **prior** estimate of returns (for example, the market-implied
 returns) with **views** on certain assets, to produce a **posterior** estimate of expected
 returns. The advantages of this are:
 
@@ -20,7 +20,7 @@ be estimated. The Black-Litterman formula is given below:
 
 .. math:: 
 
-    E(R) = [(\tau \Sigma)^{-1} + P^T \Omega^{-1} P]^{-1}[(\tau \Sigma)^{-1} \Pi + P^T \Sigma^{-1} Q]
+    E(R) = [(\tau \Sigma)^{-1} + P^T \Omega^{-1} P]^{-1}[(\tau \Sigma)^{-1} \Pi + P^T \Omega^{-1} Q]
 
 - :math:`E(R)` is a Nx1 vector of expected returns, where *N* is the number of assets.
 - :math:`Q` is a Kx1 vector of views.
@@ -45,18 +45,17 @@ Similarly, we can calculate a posterior estimate of the covariance matrix:
 Though the algorithm is relatively simple, BL proved to be a challenge from a software
 engineering perspective because it's not quite clear how best to fit it into PyPortfolioOpt's
 API. The full discussion can be found on a `Github issue thread <https://github.com/robertmartin8/PyPortfolioOpt/issues/48>`_,
-but I ultimately decided that though BL is not technically an optimiser, it didn't make sense to
+but I ultimately decided that though BL is not technically an optimizer, it didn't make sense to
 split up its methods into `expected_returns` or `risk_models`. I have thus made it an independent
 module and owing to the comparatively extensive theory, have given it a dedicated documentation page.
 I'd like to thank  `Felipe Schneider <https://github.com/schneiderfelipe>`_ for his multiple
 contributions to the Black-Litterman implementation. A full example of its usage, including the acquistion
 of market cap data for free, please refer to the `cookbook recipe <https://github.com/robertmartin8/PyPortfolioOpt/blob/master/cookbook/4-Black-Litterman-Allocation.ipynb>`_.
 
-.. caution:: 
+.. tip:: 
 
-    Our implementation of Black-Litterman makes frequent use of the fact that python 3.6+ dictionaries
-    remain ordered. It is still possible to use python 3.5 but you will have to construct the BL inputs
-    explicitly (``Q``, ``P``, ``omega``).
+    Thomas Kirschenmann has built a neat interactive `Black-Litterman tool <https://github.com/thk3421-models/cardiel>`_
+    on top of PyPortfolioOpt, which allows you to visualise BL outputs and compare optimization objectives.
 
 Priors
 ======
@@ -193,7 +192,7 @@ Output of the BL model
 ======================
 
 The BL model outputs posterior estimates of the returns and covariance matrix. The default suggestion in the literature is to
-then input these into an optimiser (see :ref:`efficient-frontier`). A quick alternative, which is quite useful for debugging, is
+then input these into an optimizer (see :ref:`efficient-frontier`). A quick alternative, which is quite useful for debugging, is
 to calculate the weights implied by the returns vector [4]_. It is actually the reverse of the procedure we used to calculate the
 returns implied by the market weights. 
 
@@ -225,6 +224,7 @@ Documentation reference
 
 .. automodule:: pypfopt.black_litterman
     :members:
+    :exclude-members: BlackLittermanModel
 
     .. autoclass:: BlackLittermanModel
         :members:

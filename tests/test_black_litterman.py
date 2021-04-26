@@ -29,12 +29,32 @@ def test_input_errors():
         # Because default_omega uses matrix mult on P
         BlackLittermanModel(S, Q=views, P=P)
 
+    # P not an DataFrame or ndarray
+    with pytest.raises(TypeError):
+        BlackLittermanModel(S, Q=views[:-1], P=1.0)
+
     with pytest.raises(AssertionError):
         BlackLittermanModel(S, Q=views, P=P, omega=np.eye(len(views)))
 
     # pi and S don't match dimensions
     with pytest.raises(AssertionError):
         BlackLittermanModel(S, Q=views, pi=df.pct_change().mean()[:-1])
+
+    # If pi=="market" then market_caps must be supplied
+    with pytest.raises(ValueError):
+        BlackLittermanModel(S, Q=views, pi="market")
+
+    # pi's valid numerical types are Series, DataFrame and ndarray
+    with pytest.raises(TypeError):
+        BlackLittermanModel(S, Q=views, pi=[0.1] * len(S))
+
+    # risk_aversion cannot be negative
+    with pytest.raises(ValueError):
+        BlackLittermanModel(S, Q=views, risk_aversion=-0.01)
+
+    # omega must be ndarray, DataFrame and string
+    with pytest.raises(TypeError):
+        BlackLittermanModel(S, Q=views, omega=1.0)
 
 
 def test_parse_views():
@@ -73,13 +93,27 @@ def test_dataframe_input():
 
     # views on the first 10 assets
     view_df = pd.DataFrame(pd.Series(0.1, index=S.columns)[:10])
-    picking = np.eye(len(S))[:10, :]
+    # P's index and columns labels are ignored when a DataFrame is used:
+    picking = pd.DataFrame(np.eye(len(S))[:10, :])
     assert BlackLittermanModel(S, Q=view_df, P=picking)
 
     prior_df = df.pct_change().mean()
     assert BlackLittermanModel(S, pi=prior_df, Q=view_df, P=picking)
     omega_df = S.iloc[:10, :10]
     assert BlackLittermanModel(S, pi=prior_df, Q=view_df, P=picking, omega=omega_df)
+
+
+def test_cov_ndarray():
+    df = get_data()
+    prior_df = df.pct_change().mean()
+    S = risk_models.sample_cov(df)
+    views = pd.Series(0.1, index=S.columns)
+    bl = BlackLittermanModel(S, pi=prior_df, Q=views)
+    bl_nd = BlackLittermanModel(S.to_numpy(), pi=prior_df.to_numpy(), Q=views)
+    #  Compare without missing ticker index values.
+    np.testing.assert_equal(bl_nd.bl_returns().to_numpy(), bl.bl_returns().to_numpy())
+    np.testing.assert_equal(bl_nd.bl_cov().to_numpy(), bl.bl_cov().to_numpy())
+    assert list(bl_nd.bl_weights().values()) == list(bl.bl_weights().values())
 
 
 def test_default_omega():
@@ -143,26 +177,26 @@ def test_bl_returns_all_views():
         posterior_rets,
         np.array(
             [
-                0.11774473,
-                0.1709139,
-                0.12180833,
-                0.21202423,
-                0.28120945,
-                -0.2787358,
-                0.17274774,
-                0.12714698,
-                0.25492005,
-                0.11229777,
-                0.07182723,
-                -0.01521839,
-                -0.21235465,
-                0.06399515,
-                -0.11738365,
-                0.28865661,
-                0.23828607,
-                0.12038049,
-                0.2331218,
-                0.10485376,
+                0.11168648,
+                0.16782938,
+                0.12516799,
+                0.24067997,
+                0.32848296,
+                -0.22789895,
+                0.16311297,
+                0.11928542,
+                0.25414308,
+                0.11007738,
+                0.06282615,
+                -0.03140218,
+                -0.16977172,
+                0.05254821,
+                -0.10463884,
+                0.32173375,
+                0.26399864,
+                0.1118594,
+                0.22999558,
+                0.08977448,
             ]
         ),
     )
@@ -214,6 +248,11 @@ def test_market_risk_aversion():
     prices = pd.read_csv(resource("spy_prices.csv"), parse_dates=True, index_col=0)
     delta = black_litterman.market_implied_risk_aversion(prices)
     assert np.round(delta.iloc[0], 5) == 2.68549
+
+    # Check it raises for other types.
+    list_invalid = [100.0, 110.0, 120.0, 130.0]
+    with pytest.raises(TypeError):
+        delta = black_litterman.market_implied_risk_aversion(list_invalid)
 
 
 def test_bl_weights():
@@ -342,6 +381,10 @@ def test_bl_market_prior():
     delta = black_litterman.market_implied_risk_aversion(prices)
 
     mcaps = get_market_caps()
+
+    with pytest.warns(RuntimeWarning):
+        black_litterman.market_implied_prior_returns(mcaps, delta, S.values)
+
     prior = black_litterman.market_implied_prior_returns(mcaps, delta, S)
 
     viewdict = {"GOOG": 0.40, "AAPL": -0.30, "FB": 0.30, "BABA": 0}
@@ -380,6 +423,44 @@ def test_bl_market_automatic():
     bl2 = BlackLittermanModel(S, pi=prior, absolute_views=viewdict)
     rets2 = bl2.bl_returns()
     pd.testing.assert_series_equal(rets, rets2)
+
+
+# def test_bl_mcap_order_invariance():
+#     df = get_data()
+#     S = risk_models.sample_cov(df)
+#     mcaps = get_market_caps()
+#     mcaps2 = {k: v for k, v in list(mcaps.items())[::-1]}
+#     # mcaps = pd.Series(mcaps)
+
+#     market_prior1 = black_litterman.market_implied_prior_returns(mcaps, 2, S.values, 0)
+#     market_prior2 = black_litterman.market_implied_prior_returns(mcaps2, 2, S.values, 0)
+#     market_prior1 == market_prior2
+
+#     mcaps = pd.Series(mcaps)
+#     mcaps2 = pd.Series(mcaps2)
+#     mkt_weights1 = mcaps / mcaps.sum()
+#     mkt_weights2 = mcaps2 / mcaps2.sum()
+#     # Pi is excess returns so must add risk_free_rate to get return.
+#     pd.testing.assert_series_equal(
+#         S.dot(mkt_weights1), S.dot(mkt_weights2), check_exact=False
+#     )
+#     S.values.dot(mkt_weights1)
+#     S.values.dot(mkt_weights2)
+
+#     return risk_aversion * cov_matrix.dot(mkt_weights) + risk_free_rate
+
+#     viewdict = {"BABA": 0, "AAPL": -0.30, "GOOG": 0.40, "FB": 0.30}
+#     bl = BlackLittermanModel(
+#         S,
+#         pi="market",
+#         absolute_views=viewdict,
+#         market_caps=mcaps,
+#         risk_aversion=2,
+#         risk_free_rate=0,
+#     )
+#     bl.pi.ravel() == market_prior
+#     # bl2 = BlackLittermanModel(S, pi=market_prior, absolute_views=viewdict)
+#     # bl2.pi
 
 
 def test_bl_tau():

@@ -28,7 +28,7 @@ def test_cla_max_sharpe_long_only():
 
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.3253436663900292, 0.21333530089904357, 1.4312852355106793),
+        (0.2994470912768992, 0.21764331657015668, 1.283968171780824),
     )
 
 
@@ -40,7 +40,7 @@ def test_cla_max_sharpe_short():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.3799273115521356, 0.23115368271125736, 1.5570909679242886),
+        (0.44859872371106785, 0.26762066559448255, 1.601515797589826),
     )
     sharpe = cla.portfolio_performance()[2]
 
@@ -62,6 +62,12 @@ def test_cla_custom_bounds():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     assert (0.01 <= cla.weights[::2]).all() and (cla.weights[::2] <= 0.13).all()
     assert (0.02 <= cla.weights[1::2]).all() and (cla.weights[1::2] <= 0.11).all()
+    # Test polymorphism of the weight_bounds param.
+    bounds2 = ([bounds[0][0], bounds[1][0]] * 10, [bounds[0][1], bounds[1][1]] * 10)
+    cla2 = CLA(*setup_cla(data_only=True), weight_bounds=bounds2)
+    cla2.cov_matrix = risk_models.exp_cov(df).values
+    w2 = cla2.min_volatility()
+    assert dict(w2) == dict(w)
 
 
 def test_cla_min_volatility():
@@ -72,7 +78,7 @@ def test_cla_min_volatility():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.1793123248125915, 0.15915084514118688, 1.00101463282373),
+        (0.1505682139948257, 0.15915084514118688, 0.8204054077060994),
     )
 
 
@@ -99,7 +105,9 @@ def test_cla_max_sharpe_semicovariance():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.2936179968144084, 0.06362345488289835, 4.300583759841616),
+        (0.2721798377099145, 0.07258537193305141, 3.474251505420551),
+        atol=1e-4,
+        rtol=1e-4,
     )
 
 
@@ -113,7 +121,7 @@ def test_cla_max_sharpe_exp_cov():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.3619453128519127, 0.1724297730592084, 1.9830990135009723),
+        (0.32971891062187103, 0.17670121760851704, 1.7527831149871063),
     )
 
 
@@ -127,7 +135,7 @@ def test_cla_min_volatility_exp_cov_short():
     np.testing.assert_almost_equal(cla.weights.sum(), 1)
     np.testing.assert_allclose(
         cla.portfolio_performance(),
-        (0.2634735528776959, 0.13259590618253303, 1.8362071642131053),
+        (0.23215576461823062, 0.1325959061825329, 1.6000174569958052),
     )
 
 

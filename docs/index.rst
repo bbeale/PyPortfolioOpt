@@ -6,28 +6,28 @@
 .. raw:: html
 
     <meta prefix="og: http://ogp.me/ns#" property="og:title" content="PyPortfolioOpt" />
-    <meta prefix="og: http://ogp.me/ns#" property="og:description" content="Portfolio optimisation in python" />
+    <meta prefix="og: http://ogp.me/ns#" property="og:description" content="Portfolio optimization in python" />
     <meta prefix="og: http://ogp.me/ns#" property="og:image" content="https://github.com/robertmartin8/PyPortfolioOpt/blob/master/media/logo_v1.png"/>
 
     <embed>
         <p align="center">
             <a href="https://www.python.org/">
-                <img src="https://img.shields.io/badge/python-v3-brightgreen.svg?style=flat-square"
+                <img src="https://img.shields.io/badge/python-v3-brightgreen.svg"
                     alt="python"></a> &nbsp;
             <a href="https://pypi.org/project/PyPortfolioOpt/">
-                <img src="https://img.shields.io/badge/pypi-v1.2.3-brightgreen.svg?style=flat-square"
+                <img src="https://img.shields.io/badge/pypi-v1.4.1-brightgreen.svg"
                     alt="python"></a> &nbsp;
             <a href="https://opensource.org/licenses/MIT">
-                <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square"
+                <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg"
                     alt="MIT license"></a> &nbsp;
             <a href="https://github.com/robertmartin8/PyPortfolioOpt/graphs/commit-activity">
-                <img src="https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg?style=flat-square"
+                <img src="https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg"
                     alt="MIT license"></a> &nbsp;
         </p>
     </embed>
 
 
-PyPortfolioOpt is a library that implements portfolio optimisation methods, including
+PyPortfolioOpt is a library that implements portfolio optimization methods, including
 classical efficient frontier techniques and Black-Litterman allocation, as well as more
 recent developments in the field like shrinkage and Hierarchical Risk Parity, along with
 some novel experimental features like exponentially-weighted covariance matrices.
@@ -36,20 +36,26 @@ It is **extensive** yet easily
 **extensible**, and can be useful for both the casual investor and the serious
 practitioner. Whether you are a fundamentals-oriented investor who has identified a
 handful of undervalued picks, or an algorithmic trader who has a basket of
-interesting signals, PyPortfolioOpt can help you combine your alpha-generators
+strategies, PyPortfolioOpt can help you combine your alpha sources
 in a risk-efficient way.
 
 
 Installation
 ============
 
-Installation on macOS or linux is as simple as::
+If you would like to play with PyPortfolioOpt interactively in your browser, you may launch Binder
+`here <https://mybinder.org/v2/gh/robertmartin8/pyportfolioopt/master/?filepath=cookbook>`__. It takes a
+while to set up, but it lets you try out the cookbook recipes without having to install anything.
+
+Prior to installing PyPortfolioOpt, you need to install C++. On macOS, this means that you need
+to install XCode Command Line Tools (see `here <https://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/>`__).
+
+For Windows users, download Visual Studio `here <https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16>`__,
+with additional instructions `here <https://drive.google.com/file/d/0B4GsMXCRaSSIOWpYQkstajlYZ0tPVkNQSElmTWh1dXFaYkJr/view>`__.
+
+Installation can then be done via pip::
 
     pip install PyPortfolioOpt
-
-Windows users need to go through the additional step of downloading C++ (for ``cvxpy``). You can
-download this `here <https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16>`_,
-with additional instructions `here <https://drive.google.com/file/d/0B4GsMXCRaSSIOWpYQkstajlYZ0tPVkNQSElmTWh1dXFaYkJr/view>`_.
 
 For the sake of best practice, it is good to do this with a dependency manager. I suggest you
 set yourself up with `poetry <https://github.com/sdispater/poetry>`_, then within a new poetry project
@@ -73,8 +79,7 @@ Thanks to Thomas Schmelzer, PyPortfolioOpt now supports Docker (requires
 
 .. note::
     If any of these methods don't work, please `raise an issue
-    <https://github.com/robertmartin8/PyPortfolioOpt/issues>`_  on GitHub
-
+    <https://github.com/robertmartin8/PyPortfolioOpt/issues>`_ with the 'packaging' label on GitHub
 
 
 
@@ -82,14 +87,14 @@ For developers
 --------------
 
 If you are planning on using PyPortfolioOpt as a starting template for significant
-modifications, it probably makes sense to clone this repository and to just use the
+modifications, it probably makes sense to clone the repository and to just use the
 source code
 
 .. code-block:: text
 
     git clone https://github.com/robertmartin8/PyPortfolioOpt
 
-Alternatively, if you still want the convenience of ``from pypfopt import x``,
+Alternatively, if you still want the convenience of a global ``from pypfopt import x``,
 you should try
 
 .. code-block:: text
@@ -128,7 +133,7 @@ that's fine too::
     mu = expected_returns.mean_historical_return(df)
     S = risk_models.sample_cov(df)
 
-    # Optimise for maximal Sharpe ratio
+    # Optimize for maximal Sharpe ratio
     ef = EfficientFrontier(mu, S)
     weights = ef.max_sharpe()
     ef.portfolio_performance(verbose=True)
@@ -151,39 +156,29 @@ Contents
     UserGuide
     ExpectedReturns
     RiskModels
-    EfficientFrontier
+    MeanVariance
+    GeneralEfficientFrontier
     BlackLitterman
-    OtherOptimisers
+    OtherOptimizers
     Postprocessing
     Plotting
 
 .. toctree::
+    :maxdepth: 1
     :caption: Other information
     
+    FAQ
     Roadmap
     Contributing
     About
 
-Advantages over existing implementations
-========================================
-
-- Includes both classical methods (Markowitz 1952 and Black-Litterman), suggested best practices
-  (e.g covariance shrinkage), along with many recent developments and novel
-  features, like L2 regularisation, shrunk covariance, hierarchical risk parity.
-- Native support for pandas dataframes: easily input your daily prices data.
-- Extensive practical tests, which use real-life data.
-- Easy to combine with your proprietary strategies and models.
-- Robust to missing data, and price-series of different lengths (e.g FB data
-  only goes back to 2012 whereas AAPL data goes back to 1980).
-
-
 Project principles and design decisions
 =======================================
 
-- It should be easy to swap out individual components of the optimisation process
+- It should be easy to swap out individual components of the optimization process
   with the user's proprietary improvements.
 - Usability is everything: it is better to be self-explanatory than consistent.
-- There is no point in portfolio optimisation unless it can be practically
+- There is no point in portfolio optimization unless it can be practically
   applied to real asset prices.
 - Everything that has been implemented should be tested.
 - Inline documentation is good: dedicated (separate) documentation is better.
@@ -193,6 +188,34 @@ Project principles and design decisions
   <https://github.com/ambv/black>`_.
 
 
+Advantages over existing implementations
+========================================
+
+- Includes both classical methods (Markowitz 1952 and Black-Litterman), suggested best practices
+  (e.g covariance shrinkage), along with many recent developments and novel
+  features, like L2 regularisation, exponential covariance, hierarchical risk parity.
+- Native support for pandas dataframes: easily input your daily prices data.
+- Extensive practical tests, which use real-life data.
+- Easy to combine with your proprietary strategies and models.
+- Robust to missing data, and price-series of different lengths (e.g FB data
+  only goes back to 2012 whereas AAPL data goes back to 1980).
+
+
+Contributors
+=============
+
+This is a non-exhaustive unordered list of contributors. I am sincerely grateful for all
+of your efforts!
+
+- Philipp Schiele
+- Carl Peasnell
+- Felipe Schneider
+- Dingyuan Wang
+- Pat Newell
+- Aditya Bhutra
+- Thomas Schmelzer
+- Rich Caputo
+- Nicolas Knudde 
 
 
 Indices and tables

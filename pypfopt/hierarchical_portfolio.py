@@ -1,6 +1,6 @@
 """
 The ``hierarchical_portfolio`` module seeks to implement one of the recent advances in
-portfolio optimisation – the application of hierarchical clustering models in allocation.
+portfolio optimization – the application of hierarchical clustering models in allocation.
 
 All of the hierarchical classes have a similar API to ``EfficientFrontier``, though since
 many hierarchical models currently don't support different objectives, the actual allocation
@@ -13,7 +13,6 @@ Currently implemented:
 """
 
 import collections
-import warnings
 import numpy as np
 import pandas as pd
 import scipy.cluster.hierarchy as sch
@@ -33,7 +32,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
 
         - ``n_assets`` - int
         - ``tickers`` - str list
-        - ``returns`` - pd.Series
+        - ``returns`` - pd.DataFrame
 
     - Output:
 
@@ -44,7 +43,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
 
     - ``optimize()`` calculates weights using HRP
     - ``portfolio_performance()`` calculates the expected return, volatility and Sharpe ratio for
-      the optimised portfolio.
+      the optimized portfolio.
     - ``set_weights()`` creates self.weights (np.ndarray) from a weights dict
     - ``clean_weights()`` rounds the weights and clips near-zeros.
     - ``save_weights_to_file()`` saves the weights to csv, json, or txt.
@@ -127,7 +126,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
                 for j, k in ((0, len(i) // 2), (len(i) // 2, len(i)))
                 if len(i) > 1
             ]  # bi-section
-            # For each pair, optimise locally.
+            # For each pair, optimize locally.
             for i in range(0, len(cluster_items), 2):
                 first_cluster = cluster_items[i]
                 second_cluster = cluster_items[i + 1]
@@ -139,13 +138,19 @@ class HRPOpt(base_optimizer.BaseOptimizer):
                 w[second_cluster] *= 1 - alpha  # weight 2
         return w
 
-    def optimize(self):
+    def optimize(self, linkage_method="single"):
         """
-        Construct a hierarchical risk parity portfolio
+        Construct a hierarchical risk parity portfolio, using Scipy hierarchical clustering
+        (see `here <https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html>`_)
 
+        :param linkage_method: which scipy linkage method to use
+        :type linkage_method: str
         :return: weights for the HRP portfolio
         :rtype: OrderedDict
         """
+        if linkage_method not in sch._LINKAGE_METHODS:
+            raise ValueError("linkage_method must be one recognised by scipy")
+
         if self.returns is None:
             cov = self.cov_matrix
             corr = risk_models.cov_to_corr(self.cov_matrix).round(6)
@@ -159,7 +164,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
         matrix = np.sqrt(np.clip((1.0 - corr) / 2.0, a_min=0.0, a_max=1.0))
         dist = ssd.squareform(matrix, checks=False)
 
-        self.clusters = sch.linkage(dist, "single")
+        self.clusters = sch.linkage(dist, linkage_method)
         sort_ix = HRPOpt._get_quasi_diag(self.clusters)
         ordered_tickers = corr.index[sort_ix].tolist()
         hrp = HRPOpt._raw_hrp_allocation(cov, ordered_tickers)
@@ -182,7 +187,7 @@ class HRPOpt(base_optimizer.BaseOptimizer):
         :param frequency: number of time periods in a year, defaults to 252 (the number
                             of trading days in a year)
         :type frequency: int, optional
-        :raises ValueError: if weights have not been calcualted yet
+        :raises ValueError: if weights have not been calculated yet
         :return: expected return, volatility, Sharpe ratio.
         :rtype: (float, float, float)
         """

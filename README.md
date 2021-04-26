@@ -8,35 +8,32 @@
         <img src="https://img.shields.io/badge/python-v3-brightgreen.svg"
             alt="python"></a> &nbsp;
     <a href="https://pypi.org/project/PyPortfolioOpt/">
-        <img src="https://img.shields.io/badge/pypi-v1.2.3-brightgreen.svg"
+        <img src="https://img.shields.io/badge/pypi-v1.4.1-brightgreen.svg"
             alt="pypi"></a> &nbsp;
     <a href="https://opensource.org/licenses/MIT">
         <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg"
             alt="MIT license"></a> &nbsp;
-    <a href="https://github.com/robertmartin8/PyPortfolioOpt/graphs/commit-activity">
-        <img src="https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg"
-            alt="issues"></a> &nbsp;
+    <a href="https://github.com/robertmartin8/PyPortfolioOpt/actions">
+        <img src="https://github.com/robertmartin8/PyPortfolioOpt/workflows/pytest/badge.svg?event=push"
+            alt="build"></a> &nbsp;
     <a href="https://pyportfolioopt.readthedocs.io/en/latest/">
         <img src="https://img.shields.io/badge/docs-passing-brightgreen.svg"
             alt="docs"></a> &nbsp;
-    <a href="https://travis-ci.org/robertmartin8/PyPortfolioOpt">
-        <img src="https://travis-ci.org/robertmartin8/PyPortfolioOpt.svg?branch=master"
-            alt="travis"></a> &nbsp;
-    <a href="https://mybinder.org/v2/gh/robertmartin8/pyportfolioopt/master">
+    <a href="https://mybinder.org/v2/gh/robertmartin8/pyportfolioopt/master/?filepath=cookbook">
         <img src="https://mybinder.org/badge_logo.svg"
             alt="binder"></a> &nbsp;
 </p>
 
 <!-- content -->
 
-PyPortfolioOpt is a library that implements portfolio optimisation methods, including
-classical mean-variance optimisation techniques and Black-Litterman allocation, as well as more
+PyPortfolioOpt is a library that implements portfolio optimization methods, including
+classical mean-variance optimization techniques and Black-Litterman allocation, as well as more
 recent developments in the field like shrinkage and Hierarchical Risk Parity, along with
 some novel experimental features like exponentially-weighted covariance matrices.
 
 It is **extensive** yet easily **extensible**, and can be useful for both the casual investor and the serious practitioner. Whether you are a fundamentals-oriented investor who has identified a
 handful of undervalued picks, or an algorithmic trader who has a basket of
-interesting signals, PyPortfolioOpt can help you combine your alpha streams
+strategies, PyPortfolioOpt can help you combine your alpha sources
 in a risk-efficient way.
 
 Head over to the [documentation on ReadTheDocs](https://pyportfolioopt.readthedocs.io/en/latest/) to get an in-depth look at the project, or check out the [cookbook](https://github.com/robertmartin8/PyPortfolioOpt/tree/master/cookbook) to see some examples showing the full process from downloading data to building a portfolio.
@@ -52,17 +49,16 @@ Head over to the [documentation on ReadTheDocs](https://pyportfolioopt.readthedo
   - [For development](#for-development)
 - [A quick example](#a-quick-example)
 - [What's new](#whats-new)
-- [An overview of classical portfolio optimisation methods](#an-overview-of-classical-portfolio-optimisation-methods)
+- [An overview of classical portfolio optimization methods](#an-overview-of-classical-portfolio-optimization-methods)
 - [Features](#features)
   - [Expected returns](#expected-returns)
   - [Risk models (covariance)](#risk-models-covariance)
   - [Objective functions](#objective-functions)
   - [Adding constraints or different objectives](#adding-constraints-or-different-objectives)
   - [Black-Litterman allocation](#black-litterman-allocation)
-  - [Other optimisers](#other-optimisers)
+  - [Other optimizers](#other-optimizers)
 - [Advantages over existing implementations](#advantages-over-existing-implementations)
 - [Project principles and design decisions](#project-principles-and-design-decisions)
-- [Roadmap](#roadmap)
 - [Testing](#testing)
 - [Contributing](#contributing)
 - [Getting in touch](#getting-in-touch)
@@ -71,6 +67,8 @@ Head over to the [documentation on ReadTheDocs](https://pyportfolioopt.readthedo
 
 If you would like to play with PyPortfolioOpt interactively in your browser, you may launch Binder [here](https://mybinder.org/v2/gh/robertmartin8/pyportfolioopt/master). It takes a
 while to set up, but it lets you try out the cookbook recipes without having to deal with all of the requirements.
+
+*Note: macOS users will need to install [Command Line Tools](https://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/).*
 
 *Note: if you are on windows, you first need to installl C++. ([download](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16), [install instructions](https://drive.google.com/file/d/0B4GsMXCRaSSIOWpYQkstajlYZ0tPVkNQSElmTWh1dXFaYkJr/view))*
 
@@ -93,7 +91,24 @@ Otherwise, clone/download the project and in the project directory run:
 python setup.py install
 ```
 
-Thanks to Thomas Schmelzer, PyPortfolioOpt now supports Docker (requires **make**, **docker**, **docker-compose**). Build your first container with `make build`; run tests with `make test`. For more information, please read [this guide](https://docker-curriculum.com/#introduction).
+PyPortfolioOpt supports Docker. Build your first container with `docker build -f docker/Dockerfile . -t pypfopt`. You can use the image to run tests or even launch a Jupyter server.
+
+```bash
+# iPython interpreter:
+docker run -it pypfopt poetry run ipython
+
+# Jupyter notebook server:
+docker run -it -p 8888:8888 pypfopt poetry run jupyter notebook --allow-root --no-browser --ip 0.0.0.0
+# click on http://127.0.0.1:8888/?token=xxx
+
+# Pytest
+docker run -t pypfopt poetry run pytest
+
+# Bash
+docker run -it pypfopt bash
+```
+
+For more information, please read [this guide](https://docker-curriculum.com/#introduction).
 
 ### For development
 
@@ -126,7 +141,7 @@ df = pd.read_csv("tests/resources/stock_prices.csv", parse_dates=True, index_col
 mu = expected_returns.mean_historical_return(df)
 S = risk_models.sample_cov(df)
 
-# Optimise for maximal Sharpe ratio
+# Optimize for maximal Sharpe ratio
 ef = EfficientFrontier(mu, S)
 raw_weights = ef.max_sharpe()
 cleaned_weights = ef.clean_weights()
@@ -138,11 +153,11 @@ ef.portfolio_performance(verbose=True)
 This outputs the following weights:
 
 ```txt
-{'GOOG': 0.01269,
- 'AAPL': 0.09202,
- 'FB': 0.19856,
- 'BABA': 0.09642,
- 'AMZN': 0.07158,
+{'GOOG': 0.03835,
+ 'AAPL': 0.0689,
+ 'FB': 0.20603,
+ 'BABA': 0.07315,
+ 'AMZN': 0.04033,
  'GE': 0.0,
  'AMD': 0.0,
  'WMT': 0.0,
@@ -153,15 +168,15 @@ This outputs the following weights:
  'SHLD': 0.0,
  'XOM': 0.0,
  'RRC': 0.0,
- 'BBY': 0.06129,
- 'MA': 0.24562,
- 'PFE': 0.18413,
+ 'BBY': 0.01324,
+ 'MA': 0.35349,
+ 'PFE': 0.1957,
  'JPM': 0.0,
- 'SBUX': 0.03769}
+ 'SBUX': 0.01082}
 
-Expected annual return: 33.0%
-Annual volatility: 21.7%
-Sharpe Ratio: 1.43
+Expected annual return: 30.5%
+Annual volatility: 22.2%
+Sharpe Ratio: 1.28
 ```
 
 This is interesting but not useful in itself. However, PyPortfolioOpt provides a method which allows you to convert the above continuous weights to an actual allocation that you could buy. Just enter the most recent prices, and the desired portfolio size ($10,000 in this example):
@@ -173,16 +188,16 @@ from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 latest_prices = get_latest_prices(df)
 
 da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=10000)
-allocation, leftover = da.lp_portfolio()
+allocation, leftover = da.greedy_portfolio()
 print("Discrete allocation:", allocation)
 print("Funds remaining: ${:.2f}".format(leftover))
 ```
 
 ```txt
-11 out of 20 tickers were removed
-Discrete allocation: {'GOOG': 0, 'AAPL': 5, 'FB': 11, 'BABA': 5, 'AMZN': 1,
-                      'BBY': 7, 'MA': 14, 'PFE': 50, 'SBUX': 5}
-Funds remaining: $8.42
+12 out of 20 tickers were removed
+Discrete allocation: {'GOOG': 1, 'AAPL': 4, 'FB': 12, 'BABA': 4, 'BBY': 2,
+                      'MA': 20, 'PFE': 54, 'SBUX': 1}
+Funds remaining: $11.89
 ```
 
 *Disclaimer: nothing about this project constitues investment advice, and the author bears no responsibiltiy for your subsequent investment decisions. Please refer to the [license](https://github.com/robertmartin8/PyPortfolioOpt/blob/master/LICENSE.txt) for more information.*
@@ -203,36 +218,35 @@ As of v1.2.0:
   - Introduced a new API, in which the function `expected_returns.return_model(method="...")` allows
     all the different return models to be called. This should make testing easier.
   - Added option to 'properly' compound returns.
-  - James-Stein shrinkage estimator
   - CAPM return model.
 - `from pypfopt import plotting`: moved all plotting functionality into a new class and added
   new plots. All other plotting functions (scattered in different classes) have been retained,
   but are now deprecated.
 
-## An overview of classical portfolio optimisation methods
+## An overview of classical portfolio optimization methods
 
-Harry Markowitz's 1952 paper is the undeniable classic, which turned portfolio optimisation from an art into a science. The key insight is that by combining assets with different expected returns and volatilities, one can decide on a mathematically optimal allocation which minimises the risk for a target return – the set of all such optimal portfolios is referred to as the **efficient frontier**.
+Harry Markowitz's 1952 paper is the undeniable classic, which turned portfolio optimization from an art into a science. The key insight is that by combining assets with different expected returns and volatilities, one can decide on a mathematically optimal allocation which minimises the risk for a target return – the set of all such optimal portfolios is referred to as the **efficient frontier**.
 
 <center>
 <img src="https://github.com/robertmartin8/PyPortfolioOpt/blob/master/media/efficient_frontier_white.png" style="width:60%;"/>
 </center>
 
 Although much development has been made in the subject, more than half a century later, Markowitz's core ideas are still fundamentally important and see daily use in many portfolio management firms.
-The main drawback of mean-variance optimisation is that the theoretical treatment requires knowledge of the expected returns and the future risk-characteristics (covariance) of the assets. Obviously, if we knew the expected returns of a stock life would be much easier, but the whole game is that stock returns are notoriously hard to forecast. As a substitute, we can derive estimates of the expected return and covariance based on historical data – though we do lose the theoretical guarantees provided by Markowitz, the closer our estimates are to the real values, the better our portfolio will be.
+The main drawback of mean-variance optimization is that the theoretical treatment requires knowledge of the expected returns and the future risk-characteristics (covariance) of the assets. Obviously, if we knew the expected returns of a stock life would be much easier, but the whole game is that stock returns are notoriously hard to forecast. As a substitute, we can derive estimates of the expected return and covariance based on historical data – though we do lose the theoretical guarantees provided by Markowitz, the closer our estimates are to the real values, the better our portfolio will be.
 
 Thus this project provides four major sets of functionality (though of course they are intimately related)
 
 - Estimates of expected returns
 - Estimates of risk (i.e covariance of asset returns)
-- Objective functions to be optimised
-- Optimisers.
+- Objective functions to be optimized
+- Optimizers.
 
 A key design goal of PyPortfolioOpt is **modularity** – the user should be able to swap in their
 components while still making use of the framework that PyPortfolioOpt provides.
 
 ## Features
 
-In this section, we detail PyPortfolioOpt's current available functionality as per the above breakdown. More examples are offered in the Jupyter notebooks [here](https://github.com/robertmartin8/PyPortfolioOpt/tree/master/cookbook). Another good resource is the [tests](https://github.com/robertmartin8/PyPortfolioOpt/tree/master/tests).
+In this section, we detail some of PyPortfolioOpt's available functionality. More examples are offered in the Jupyter notebooks [here](https://github.com/robertmartin8/PyPortfolioOpt/tree/master/cookbook). Another good resource is the [tests](https://github.com/robertmartin8/PyPortfolioOpt/tree/master/tests).
 
 A far more comprehensive version of this can be found on [ReadTheDocs](https://pyportfolioopt.readthedocs.io/en/latest/), as well as possible extensions for more advanced users.
 
@@ -244,9 +258,6 @@ A far more comprehensive version of this can be found on [ReadTheDocs](https://p
 - Exponentially weighted mean historical returns:
     - similar to mean historical returns, except it gives exponentially more weight to recent prices
     - it is likely the case that an asset's most recent returns hold more weight than returns from 10 years ago when it comes to estimating future returns.
-- James-Stein shrinkage:
-    - a slightly more robust estimate of future returns
-    - by shrinking mean returns to the grand average, we can reduce loss.
 - Capital Asset Pricing Model (CAPM):
     - a simple model to predict returns based on the beta to the market
     - this is used all over finance!
@@ -259,7 +270,7 @@ The covariance matrix encodes not just the volatility of an asset, but also how 
     - an unbiased estimate of the covariance matrix
     - relatively easy to compute
     - the de facto standard for many years
-    - however, it has a high estimation error, which is particularly dangerous in mean-variance optimisation because the optimiser is likely to give excess weight to these erroneous estimates.
+    - however, it has a high estimation error, which is particularly dangerous in mean-variance optimization because the optimizer is likely to give excess weight to these erroneous estimates.
 - Semicovariance: a measure of risk that focuses on downside variation.
 - Exponential covariance: an improvement over sample covariance that gives more weight to recent data
 - Covariance shrinkage: techniques that involve combining the sample covariance matrix with a structured estimator, to reduce the effect of erroneous weights. PyPortfolioOpt provides wrappers around the efficient vectorised implementations provided by `sklearn.covariance`.
@@ -286,7 +297,7 @@ The covariance matrix encodes not just the volatility of an asset, but also how 
 
 ### Adding constraints or different objectives
 
-- Long/short: by default all of the mean-variance optimisation methods in PyPortfolioOpt are long-only, but they can be initialised to allow for short positions by changing the weight bounds:
+- Long/short: by default all of the mean-variance optimization methods in PyPortfolioOpt are long-only, but they can be initialised to allow for short positions by changing the weight bounds:
 
 ```python
 ef = EfficientFrontier(mu, S, weight_bounds=(-1, 1))
@@ -305,7 +316,7 @@ ef.efficient_return(target_return=0.2, market_neutral=True)
 ef = EfficientFrontier(mu, S, weight_bounds=(0, 0.1))
 ```
 
-One issue with mean-variance optimisation is that it leads to many zero-weights. While these are
+One issue with mean-variance optimization is that it leads to many zero-weights. While these are
 "optimal" in-sample, there is a large body of research showing that this characteristic leads
 mean-variance portfolios to underperform out-of-sample. To that end, I have introduced an
 objective function that can reduce the number of negligible weights for any of the objective functions. Essentially, it adds a penalty (parameterised by `gamma`) on small weights, with a term that looks just like L2 regularisation in machine learning. It may be necessary to try several `gamma` values to achieve the desired number of non-negligible weights. For the test portfolio of 20 securities, `gamma ~ 1` is sufficient
@@ -334,14 +345,16 @@ ef = EfficientFrontier(rets, S)
 ef.max_sharpe()
 ```
 
-### Other optimisers
+### Other optimizers
 
-The features above mostly pertain to solving efficient frontier optimisation problems via quadratic programming (though this is taken care of by `cvxpy`). However, we offer different optimisers as well:
+The features above mostly pertain to solving mean-variance optimization problems via quadratic programming (though this is taken care of by `cvxpy`). However, we offer different optimizers as well:
 
+- Mean-semivariance optimization
+- Mean-CVaR optimization
 - Hierarchical Risk Parity, using clustering algorithms to choose uncorrelated assets
 - Markowitz's critical line algorithm (CLA)
 
-Please refer to the [documentation](https://pyportfolioopt.readthedocs.io/en/latest/OtherOptimisers.html) for more.
+Please refer to the [documentation](https://pyportfolioopt.readthedocs.io/en/latest/OtherOptimizers.html) for more.
 
 ## Advantages over existing implementations
 
@@ -356,29 +369,16 @@ Please refer to the [documentation](https://pyportfolioopt.readthedocs.io/en/lat
 
 ## Project principles and design decisions
 
-- It should be easy to swap out individual components of the optimisation process
+- It should be easy to swap out individual components of the optimization process
   with the user's proprietary improvements.
 - Usability is everything: it is better to be self-explanatory than consistent.
-- There is no point in portfolio optimisation unless it can be practically
+- There is no point in portfolio optimization unless it can be practically
   applied to real asset prices.
 - Everything that has been implemented should be tested.
 - Inline documentation is good: dedicated (separate) documentation is better.
   The two are not mutually exclusive.
 - Formatting should never get in the way of coding: because of this,
   I have deferred **all** formatting decisions to [Black](https://github.com/ambv/black).
-
-## Roadmap
-
-Feel free to raise an issue requesting any new features – here are some of the things I want to implement:
-
-- Optimising for higher moments (i.e skew and kurtosis)
-- Factor modelling: doable but not sure if it fits within the API.
-- Proper CVaR optimisation – remove NoisyOpt and use linear programming
-- More objective functions, including the Calmar Ratio, Sortino Ratio, etc.
-- Monte Carlo optimisation with custom distributions
-- Open-source backtests using either `Backtrader <https://www.backtrader.com/>`_ or
-  `Zipline <https://github.com/quantopian/zipline>`_.
-- Further support for different risk/return models
 
 ## Testing
 
@@ -405,6 +405,23 @@ been tested to work as intended.
 
 Contributions are *most welcome*. Have a look at the [Contribution Guide](https://github.com/robertmartin8/PyPortfolioOpt/blob/master/CONTRIBUTING.md) for more.
 
+I'd like to thank all of the people who have contributed to PyPortfolioOpt since its release in 2018.
+Special shout-outs to:
+
+- Philipp Schiele
+- Carl Peasnell
+- Felipe Schneider
+- Dingyuan Wang
+- Pat Newell
+- Aditya Bhutra
+- Thomas Schmelzer
+- Rich Caputo
+- Nicolas Knudde
+
 ## Getting in touch
 
-If you would like to reach out for any reason, be it consulting opportunities or just for a chat, please do so via the [form](https://reasonabledeviations.com/about/) on my website.
+If you are having a problem with PyPortfolioOpt, please raise a GitHub issue. For anything else, you can reach me at:
+
+<center>
+<img src="https://github.com/robertmartin8/ReasonableDeviations/blob/gh-pages/assets/images/contact.png" style="width:75%;"/>
+</center>

@@ -47,7 +47,7 @@ class DiscreteAllocation:
     """
 
     def __init__(
-        self, weights, latest_prices, total_portfolio_value=10000, short_ratio=0.30
+        self, weights, latest_prices, total_portfolio_value=10000, short_ratio=None
     ):
         """
         :param weights: continuous weights generated from the ``efficient_frontier`` module
@@ -56,26 +56,32 @@ class DiscreteAllocation:
         :type latest_prices: pd.Series
         :param total_portfolio_value: the desired total value of the portfolio, defaults to 10000
         :type total_portfolio_value: int/float, optional
-        :param short_ratio: the short ratio, e.g 0.3 corresponds to 130/30
-        :type short_ratio: float
+        :param short_ratio: the short ratio, e.g 0.3 corresponds to 130/30. If None,
+                            defaults to the input weights.
+        :type short_ratio: float, defaults to None.
         :raises TypeError: if ``weights`` is not a dict
         :raises TypeError: if ``latest_prices`` isn't a series
         :raises ValueError: if ``short_ratio < 0``
         """
         if not isinstance(weights, dict):
             raise TypeError("weights should be a dictionary of {ticker: weight}")
-        if not isinstance(latest_prices, pd.Series):
-            raise TypeError("latest_prices should be a pd.Series")
+        if any(np.isnan(val) for val in weights.values()):
+            raise ValueError("weights should have no NaNs")
+        if (not isinstance(latest_prices, pd.Series)) or any(np.isnan(latest_prices)):
+            raise TypeError("latest_prices should be a pd.Series with no NaNs")
         if total_portfolio_value <= 0:
             raise ValueError("total_portfolio_value must be greater than zero")
-        if short_ratio <= 0:
-            raise ValueError("short_ratio must be positive")
+        if short_ratio is not None and short_ratio < 0:
+            raise ValueError("short_ratio must be non-negative")
 
         # Drop any companies with negligible weights. Use a tuple because order matters.
         self.weights = list(weights.items())
         self.latest_prices = latest_prices
         self.total_portfolio_value = total_portfolio_value
-        self.short_ratio = short_ratio
+        if short_ratio is None:
+            self.short_ratio = sum((-x[1] for x in self.weights if x[1] < 0))
+        else:
+            self.short_ratio = short_ratio
 
     @staticmethod
     def _remove_zero_positions(allocation):
@@ -120,13 +126,15 @@ class DiscreteAllocation:
         print("Allocation has RMSE: {:.3f}".format(rmse))
         return rmse
 
-    def greedy_portfolio(self, verbose=False):
+    def greedy_portfolio(self, reinvest=False, verbose=False):
         """
         Convert continuous weights into a discrete portfolio allocation
         using a greedy iterative approach.
 
+        :param reinvest: whether or not to reinvest cash gained from shorting
+        :type reinvest: bool, defaults to False
         :param verbose: print error analysis?
-        :type verbose: bool
+        :type verbose: bool, defaults to False
         :return: the number of shares of each ticker that should be purchased,
                  along with the amount of funds leftover.
         :rtype: (dict, float)
@@ -147,13 +155,14 @@ class DiscreteAllocation:
 
             # Construct long-only discrete allocations for each
             short_val = self.total_portfolio_value * self.short_ratio
+            long_val = self.total_portfolio_value
+            if reinvest:
+                long_val += short_val
 
             if verbose:
                 print("\nAllocating long sub-portfolio...")
             da1 = DiscreteAllocation(
-                longs,
-                self.latest_prices[longs.keys()],
-                total_portfolio_value=self.total_portfolio_value,
+                longs, self.latest_prices[longs.keys()], total_portfolio_value=long_val
             )
             long_alloc, long_leftover = da1.greedy_portfolio()
 
@@ -182,14 +191,13 @@ class DiscreteAllocation:
         # First round
         for ticker, weight in self.weights:
             price = self.latest_prices[ticker]
-            # Attempt to buy the lower integer number of shares
+            # Attempt to buy the lower integer number of shares, which could be zero.
             n_shares = int(weight * self.total_portfolio_value / price)
             cost = n_shares * price
-            if cost > available_funds:
-                # Buy as many as possible
-                n_shares = available_funds // price
-                if n_shares == 0:
-                    print("Insufficient funds")
+            # As weights are all > 0 (long only) we always round down n_shares
+            # so the cost is always <= simple weighted share of portfolio value,
+            # so we can not run out of funds just here.
+            assert cost <= available_funds, "Unexpectedly insufficient funds."
             available_funds -= cost
             shares_bought.append(n_shares)
             buy_prices.append(price)
@@ -224,7 +232,7 @@ class DiscreteAllocation:
                 price = self.latest_prices[ticker]
                 counter += 1
 
-            if deficit[idx] <= 0 or counter == 10:
+            if deficit[idx] <= 0 or counter == 10:  # pragma: no cover
                 # Dirty solution to break out of both loops
                 break
 
@@ -241,13 +249,17 @@ class DiscreteAllocation:
             self._allocation_rmse_error(verbose)
         return self.allocation, available_funds
 
-    def lp_portfolio(self, verbose=False):
+    def lp_portfolio(self, reinvest=False, verbose=False, solver="GLPK_MI"):
         """
         Convert continuous weights into a discrete portfolio allocation
         using integer programming.
 
+        :param reinvest: whether or not to reinvest cash gained from shorting
+        :type reinvest: bool, defaults to False
         :param verbose: print error analysis?
         :type verbose: bool
+        :param solver: the CVXPY solver to use (must support mixed-integer programs)
+        :type solver: str, defaults to "GLPK_MI"
         :return: the number of shares of each ticker that should be purchased, along with the amount
                 of funds leftover.
         :rtype: (dict, float)
@@ -264,13 +276,14 @@ class DiscreteAllocation:
 
             # Construct long-only discrete allocations for each
             short_val = self.total_portfolio_value * self.short_ratio
+            long_val = self.total_portfolio_value
+            if reinvest:
+                long_val += short_val
 
             if verbose:
                 print("\nAllocating long sub-portfolio:")
             da1 = DiscreteAllocation(
-                longs,
-                self.latest_prices[longs.keys()],
-                total_portfolio_value=self.total_portfolio_value,
+                longs, self.latest_prices[longs.keys()], total_portfolio_value=long_val
             )
             long_alloc, long_leftover = da1.lp_portfolio()
 
@@ -297,19 +310,24 @@ class DiscreteAllocation:
         # Integer allocation
         x = cp.Variable(n, integer=True)
         # Remaining dollars
-        r = self.total_portfolio_value - p.T * x
+        r = self.total_portfolio_value - p.T @ x
 
-        # Objective function is remaining dollars + sum of absolute deviations from ideality.
-        objective = r + cp.norm(w * self.total_portfolio_value - cp.multiply(x, p), 1)
-        constraints = [r + p.T * x == self.total_portfolio_value, x >= 0, r >= 0]
+        # Set up linear program
+        eta = w * self.total_portfolio_value - cp.multiply(x, p)
+        u = cp.Variable(n)
+        constraints = [eta <= u, eta >= -u, x >= 0, r >= 0]
+        objective = cp.sum(u) + r
 
         opt = cp.Problem(cp.Minimize(objective), constraints)
-        opt.solve()
 
-        if opt.status not in {"optimal", "optimal_inaccurate"}:
+        if solver is not None and solver not in cp.installed_solvers():
+            raise NameError("Solver {} is not installed. ".format(solver))
+        opt.solve(solver=solver)
+
+        if opt.status not in {"optimal", "optimal_inaccurate"}:  # pragma: no cover
             raise exceptions.OptimizationError("Please try greedy_portfolio")
 
-        vals = np.rint(x.value)
+        vals = np.rint(x.value).astype(int)
         self.allocation = self._remove_zero_positions(
             collections.OrderedDict(zip([i[0] for i in self.weights], vals))
         )

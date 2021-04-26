@@ -5,11 +5,18 @@ import cvxpy as cp
 import pytest
 import scipy.optimize as sco
 
-from pypfopt import EfficientFrontier
-from pypfopt import risk_models
-from pypfopt import objective_functions
-from pypfopt import exceptions
-from tests.utilities_for_tests import get_data, setup_efficient_frontier
+from pypfopt import (
+    EfficientFrontier,
+    expected_returns,
+    risk_models,
+    objective_functions,
+    exceptions,
+)
+from tests.utilities_for_tests import (
+    get_data,
+    setup_efficient_frontier,
+    simple_ef_weights,
+)
 
 
 def test_data_source():
@@ -30,6 +37,26 @@ def test_returns_dataframe():
     assert not ((returns_df > 1) & returns_df.notnull()).any().any()
 
 
+def test_ef_example():
+    df = get_data()
+    mu = expected_returns.mean_historical_return(df)
+    S = risk_models.sample_cov(df)
+
+    ef = EfficientFrontier(mu, S)
+    ef.efficient_return(0.2)
+    np.testing.assert_almost_equal(ef.portfolio_performance()[0], 0.2)
+
+
+def test_ef_example_weekly():
+    df = get_data()
+    prices_weekly = df.resample("W").first()
+    mu = expected_returns.mean_historical_return(prices_weekly, frequency=52)
+    S = risk_models.sample_cov(prices_weekly, frequency=52)
+    ef = EfficientFrontier(mu, S)
+    ef.efficient_return(0.2)
+    np.testing.assert_almost_equal(ef.portfolio_performance()[0], 0.2)
+
+
 def test_efficient_frontier_inheritance():
     ef = setup_efficient_frontier()
     assert ef.clean_weights
@@ -38,6 +65,17 @@ def test_efficient_frontier_inheritance():
     assert isinstance(ef._constraints, list)
     assert isinstance(ef._lower_bounds, np.ndarray)
     assert isinstance(ef._upper_bounds, np.ndarray)
+
+
+def test_efficient_frontier_expected_returns_list():
+    """Cover the edge case that the expected_returns param is a list."""
+    ef = setup_efficient_frontier()
+    ef.min_volatility()
+    ef_r = EfficientFrontier(
+        expected_returns=ef.expected_returns.tolist(), cov_matrix=ef.cov_matrix
+    )
+    ef_r.min_volatility()
+    np.testing.assert_equal(ef.portfolio_performance(), ef_r.portfolio_performance())
 
 
 def test_portfolio_performance():
@@ -61,28 +99,25 @@ def test_min_volatility():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.17931232481259154, 0.15915084514118694, 1.00101463282373),
+        (0.15056821399482578, 0.15915084514118694, 0.8204054077060996),
     )
 
 
 def test_min_volatility_different_solver():
-    ef = setup_efficient_frontier()
-    ef.solver = "ECOS"
+    ef = setup_efficient_frontier(solver="ECOS")
     w = ef.min_volatility()
     assert isinstance(w, dict)
     assert set(w.keys()) == set(ef.tickers)
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     assert all([i >= 0 for i in w.values()])
-    test_performance = (0.179312, 0.159151, 1.001015)
+    test_performance = (0.150567, 0.159150, 0.820403)
     np.testing.assert_allclose(ef.portfolio_performance(), test_performance, atol=1e-5)
 
-    ef = setup_efficient_frontier()
-    ef.solver = "OSQP"
+    ef = setup_efficient_frontier(solver="OSQP")
     w = ef.min_volatility()
     np.testing.assert_allclose(ef.portfolio_performance(), test_performance, atol=1e-5)
 
-    ef = setup_efficient_frontier()
-    ef.solver = "SCS"
+    ef = setup_efficient_frontier(solver="SCS")
     w = ef.min_volatility()
     np.testing.assert_allclose(ef.portfolio_performance(), test_performance, atol=1e-3)
 
@@ -127,7 +162,7 @@ def test_min_volatility_short():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.1721356467349655, 0.1555915367269669, 0.9777887019776287),
+        (0.1516319319875544, 0.1555915367269669, 0.8460095886741129),
     )
 
     # Shorting should reduce volatility
@@ -159,7 +194,7 @@ def test_min_volatility_L2_reg():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.23129890623344232, 0.1955254118258614, 1.080672349748733),
+        (0.17356099329164965, 0.1955254118258614, 0.785376140408869),
     )
 
 
@@ -208,7 +243,7 @@ def test_min_volatility_tx_costs_L2_reg():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2316565265271545, 0.1959773703677164, 1.0800049318450338),
+        (0.17363446634404042, 0.1959773703677164, 0.7839398296638683),
     )
 
 
@@ -328,6 +363,43 @@ def test_min_volatility_nonlinear_constraint():
         ef.min_volatility()
 
 
+def test_max_returns():
+    ef = setup_efficient_frontier()
+    #  In unconstrained case, should equal maximal asset return
+    max_ret_idx = ef.expected_returns.argmax()
+    pf_max_ret = ef._max_return()
+    np.testing.assert_almost_equal(ef.expected_returns[max_ret_idx], pf_max_ret)
+
+    # ... and weights should in the max return asset
+    test_res = np.zeros(len(ef.tickers))
+    test_res[max_ret_idx] = 1
+    np.testing.assert_allclose(ef.weights, test_res, atol=1e-5, rtol=1e-5)
+
+    # Max ret should go down when constrained
+    ef = setup_efficient_frontier()
+    ef.add_constraint(lambda w: w <= 0.2)
+    assert ef._max_return() < pf_max_ret
+
+
+def test_max_sharpe_error():
+    ef = setup_efficient_frontier()
+    with pytest.raises(ValueError):
+        ef.max_sharpe(risk_free_rate="0.02")
+
+    # An unsupported constraint type, which is incidentally meaningless.
+    v = cp.Variable((2, 2), PSD=True)
+    ef._constraints.append(v >> np.zeros((2, 2)))
+    with pytest.raises(TypeError):
+        ef.max_sharpe()
+
+
+def test_max_sharpe_risk_free_warning():
+    ef = setup_efficient_frontier()
+    with pytest.warns(UserWarning):
+        ef.max_sharpe(risk_free_rate=0.03)
+        ef.portfolio_performance()
+
+
 def test_max_sharpe_long_only():
     ef = setup_efficient_frontier()
     w = ef.max_sharpe()
@@ -338,7 +410,7 @@ def test_max_sharpe_long_only():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.33035037367760506, 0.21671276571944567, 1.4320816434015786),
+        (0.3047768672819914, 0.22165566922402932, 1.2847714127003216),
     )
 
 
@@ -383,7 +455,7 @@ def test_max_sharpe_short():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.4072439477276246, 0.24823487545231313, 1.5599900981762558),
+        (0.4937195216716211, 0.29516576454651955, 1.6049270564945908),
     )
     sharpe = ef.portfolio_performance()[2]
 
@@ -398,7 +470,7 @@ def test_max_sharpe_L2_reg():
     ef = setup_efficient_frontier()
     ef.add_objective(objective_functions.L2_reg, gamma=5)
 
-    with warnings.catch_warnings(record=True) as w:
+    with pytest.warns(UserWarning) as w:
         weights = ef.max_sharpe()
         assert len(w) == 1
 
@@ -408,7 +480,7 @@ def test_max_sharpe_L2_reg():
     assert all([i >= 0 for i in weights.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2936875354933478, 0.22783545277575057, 1.2012508683744123),
+        (0.2516854357026833, 0.22043282695478603, 1.051047790401043),
     )
 
     ef2 = setup_efficient_frontier()
@@ -484,7 +556,7 @@ def test_max_sharpe_L2_reg_with_shorts():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.3076093180094401, 0.22415982749409985, 1.2830546901496447),
+        (0.2995338981166366, 0.2234696161770517, 1.2508810052063901),
     )
     new_number = sum(ef.weights > 0.01)
     assert new_number >= initial_number
@@ -503,6 +575,17 @@ def test_max_sharpe_risk_free_rate():
     ef.max_sharpe(risk_free_rate=0)
     _, _, new_sharpe = ef.portfolio_performance(risk_free_rate=0)
     assert new_sharpe >= initial_sharpe
+
+
+def test_max_sharpe_risk_free_portfolio_performance():
+    # Issue #238 - portfolio perf should use the same rf as
+    # max_sharpe
+    ef = setup_efficient_frontier()
+    ef.max_sharpe(risk_free_rate=0.05)
+    with pytest.warns(UserWarning):
+        res = ef.portfolio_performance()
+        res2 = ef.portfolio_performance(risk_free_rate=0.05)
+        np.testing.assert_allclose(res, res2)
 
 
 def test_min_vol_pair_constraint():
@@ -736,7 +819,7 @@ def test_max_quadratic_utility():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.40064324249527605, 0.2917825266124642, 1.3045443362029479),
+        (0.3677732711751504, 0.2921342197778279, 1.1904571516463793),
     )
 
     ret1, var1, _ = ef.portfolio_performance()
@@ -755,7 +838,7 @@ def test_max_quadratic_utility_with_shorts():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (1.3318330413711252, 1.0198436183533854, 1.2863080356272452),
+        (1.4170505733098597, 1.0438577623242156, 1.3383533884915872),
     )
 
 
@@ -767,7 +850,7 @@ def test_max_quadratic_utility_market_neutral():
     np.testing.assert_almost_equal(ef.weights.sum(), 0)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (1.13434841843883, 0.9896404148973286, 1.1260134506071473),
+        (1.248936321062371, 1.0219175004907117, 1.2025787996313317),
     )
 
 
@@ -792,7 +875,7 @@ def test_max_quadratic_utility_L2_reg():
     assert all([i >= 0 for i in weights.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2602803268728476, 0.21603540587515674, 1.112226608872166),
+        (0.19774277217586125, 0.2104822672707046, 0.8444548535162986),
     )
 
     ef2 = setup_efficient_frontier()
@@ -823,9 +906,21 @@ def test_efficient_risk():
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.28577452556155075, 0.19, 1.3988132892376837),
+        (0.2552422849133517, 0.19, 1.2381172871434818),
         atol=1e-6,
     )
+
+
+def test_efficient_risk_limit():
+    #  In the limit of high target risk, efficient risk should just maximise return
+    ef = setup_efficient_frontier()
+    ef.efficient_risk(1)
+    w = ef.weights
+
+    ef = setup_efficient_frontier()
+    ef._max_return(return_value=False)
+    w2 = ef.weights
+    np.testing.assert_allclose(w, w2, atol=5)
 
 
 def test_efficient_risk_error():
@@ -837,9 +932,14 @@ def test_efficient_risk_error():
     assert ef.efficient_risk(min_possible_vol + 0.01)
 
     ef = setup_efficient_frontier()
-    with pytest.raises(exceptions.OptimizationError):
+    with pytest.raises(ValueError):
         # This volatility is too low
         ef.efficient_risk(min_possible_vol - 0.01)
+
+    ef = setup_efficient_frontier()
+    with pytest.raises(ValueError):
+        # This volatility is negative
+        ef.efficient_risk(-0.01)
 
 
 def test_efficient_risk_many_values():
@@ -862,7 +962,7 @@ def test_efficient_risk_short():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.30468522897430295, 0.19, 1.4983424153337392),
+        (0.30035471606347336, 0.19, 1.4755511348079207),
         atol=1e-6,
     )
     sharpe = ef.portfolio_performance()[2]
@@ -885,7 +985,7 @@ def test_efficient_risk_L2_reg():
     assert all([i >= 0 for i in weights.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.24087463760460398, 0.19, 1.162498090632486),
+        (0.1931352562313653, 0.18999999989010993, 0.9112381912184281),
         atol=1e-6,
     )
 
@@ -911,7 +1011,7 @@ def test_efficient_risk_market_neutral():
     assert (ef.weights < 1).all() and (ef.weights > -1).all()
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2552600197428133, 0.21, 1.1202858085349783),
+        (0.28640632960825885, 0.21, 1.2686015698590967),
         atol=1e-6,
     )
     sharpe = ef.portfolio_performance()[2]
@@ -936,17 +1036,16 @@ def test_efficient_risk_market_neutral_L2_reg():
 
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.10755645826336145, 0.11079556786108302, 0.7902523535340413),
+        (0.12790320789339854, 0.1175336636355454, 0.9180621496492316),
         atol=1e-6,
     )
 
 
 def test_efficient_risk_market_neutral_warning():
     ef = setup_efficient_frontier()
-    with warnings.catch_warnings(record=True) as w:
+    with pytest.warns(RuntimeWarning) as w:
         ef.efficient_risk(0.19, market_neutral=True)
         assert len(w) == 1
-        assert issubclass(w[0].category, RuntimeWarning)
         assert (
             str(w[0].message)
             == "Market neutrality requires shorting - bounds have been amended"
@@ -955,14 +1054,15 @@ def test_efficient_risk_market_neutral_warning():
 
 def test_efficient_return():
     ef = setup_efficient_frontier()
-    w = ef.efficient_return(0.25)
+    target_return = 0.25
+    w = ef.efficient_return(target_return)
     assert isinstance(w, dict)
     assert set(w.keys()) == set(ef.tickers)
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.25, 0.1738852429895079, 1.3227114391408021),
+        (target_return, 0.18723269942026335, 1.2284179030274036),
         atol=1e-6,
     )
 
@@ -978,34 +1078,75 @@ def test_efficient_return_error():
         ef.efficient_return(max_ret + 0.01)
 
 
+def test_efficient_frontier_error():
+    ef = setup_efficient_frontier()
+    with pytest.raises(ValueError):
+        EfficientFrontier(ef.expected_returns[:-1], ef.cov_matrix)
+    with pytest.raises(TypeError):
+        EfficientFrontier(0.02, ef.cov_matrix)
+    with pytest.raises(ValueError):
+        EfficientFrontier(ef.expected_returns, None)
+    with pytest.raises(TypeError):
+        EfficientFrontier(ef.expected_returns, 0.01)
+
+
 def test_efficient_return_many_values():
     ef = setup_efficient_frontier()
-    for target_return in np.arange(0.25, 0.20, 0.28):
+    for target_return in np.arange(0.25, 0.28, 0.01):
         ef.efficient_return(target_return)
         np.testing.assert_almost_equal(ef.weights.sum(), 1)
         assert all([i >= 0 for i in ef.weights])
         mean_return = ef.portfolio_performance()[0]
-        assert abs(target_return - mean_return) < 0.05
+        np.testing.assert_allclose(target_return, mean_return)
 
 
 def test_efficient_return_short():
     ef = EfficientFrontier(
         *setup_efficient_frontier(data_only=True), weight_bounds=(None, None)
     )
-    w = ef.efficient_return(0.25)
+    target_return = 0.25
+    weights_sum = 1.0  # Not market neutral, weights must sum to 1.
+    w = ef.efficient_return(target_return)
     assert isinstance(w, dict)
     assert set(w.keys()) == set(ef.tickers)
-    np.testing.assert_almost_equal(ef.weights.sum(), 1)
+    np.testing.assert_almost_equal(ef.weights.sum(), weights_sum)
+    w_expected = simple_ef_weights(
+        ef.expected_returns, ef.cov_matrix, target_return, weights_sum
+    )
+    np.testing.assert_almost_equal(ef.weights, w_expected)
+    vol_expected = np.sqrt(
+        objective_functions.portfolio_variance(w_expected, ef.cov_matrix)
+    )
+    sharpe_expected = objective_functions.sharpe_ratio(
+        w_expected, ef.expected_returns, ef.cov_matrix, negative=False
+    )
     np.testing.assert_allclose(
-        ef.portfolio_performance(), (0.25, 0.16826225873038014, 1.3669137793315087)
+        ef.portfolio_performance(), (target_return, vol_expected, sharpe_expected)
     )
     sharpe = ef.portfolio_performance()[2]
 
     ef_long_only = setup_efficient_frontier()
-    ef_long_only.efficient_return(0.25)
+    ef_long_only.efficient_return(target_return)
     long_only_sharpe = ef_long_only.portfolio_performance()[2]
 
     assert sharpe > long_only_sharpe
+
+
+def test_efficient_return_longshort_target():
+    mu = pd.Series([-0.15, -0.12, -0.1, -0.05, -0.01, 0.02, 0.03, 0.04, 0.05])
+    cov = pd.DataFrame(np.diag([0.2, 0.2, 0.4, 0.3, 0.1, 0.5, 0.2, 0.3, 0.1]))
+
+    ef = EfficientFrontier(mu, cov, weight_bounds=(-1, 1))
+    w = ef.efficient_return(target_return=0.08, market_neutral=True)
+    assert isinstance(w, dict)
+    assert set(w.keys()) == set(ef.tickers)
+    np.testing.assert_almost_equal(ef.weights.sum(), 0)
+
+    np.testing.assert_allclose(
+        ef.portfolio_performance(),
+        (0.08, 0.16649041068958137, 0.3603811159542937),
+        atol=1e-6,
+    )
 
 
 def test_efficient_return_L2_reg():
@@ -1017,7 +1158,7 @@ def test_efficient_return_L2_reg():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
-        ef.portfolio_performance(), (0.25, 0.20033592447690426, 1.1480716731187948)
+        ef.portfolio_performance(), (0.25, 0.20961660883459776, 1.0972412981906703)
     )
 
 
@@ -1031,22 +1172,50 @@ def test_efficient_return_market_neutral():
     np.testing.assert_almost_equal(ef.weights.sum(), 0)
     assert (ef.weights < 1).all() and (ef.weights > -1).all()
     np.testing.assert_almost_equal(
-        ef.portfolio_performance(), (0.25, 0.20567263154580923, 1.1182819914898223)
+        ef.portfolio_performance(), (0.25, 0.1833060046337015, 1.2547324920403273)
     )
     sharpe = ef.portfolio_performance()[2]
     ef_long_only = setup_efficient_frontier()
     ef_long_only.efficient_return(0.25)
     long_only_sharpe = ef_long_only.portfolio_performance()[2]
-    assert long_only_sharpe > sharpe
+    assert long_only_sharpe < sharpe
+
+
+def test_efficient_return_market_neutral_unbounded():
+    ef = EfficientFrontier(
+        *setup_efficient_frontier(data_only=True), weight_bounds=(None, None)
+    )
+    target_return = 0.25
+    weights_sum = 0.0  # Market neutral so weights must sum to 0.0
+    w = ef.efficient_return(target_return, market_neutral=True)
+    assert isinstance(w, dict)
+    assert set(w.keys()) == set(ef.tickers)
+    w_expected = simple_ef_weights(
+        ef.expected_returns, ef.cov_matrix, target_return, weights_sum
+    )
+    np.testing.assert_almost_equal(ef.weights, w_expected)
+    vol_expected = np.sqrt(
+        objective_functions.portfolio_variance(w_expected, ef.cov_matrix)
+    )
+    sharpe_expected = objective_functions.sharpe_ratio(
+        w_expected, ef.expected_returns, ef.cov_matrix, negative=False
+    )
+    np.testing.assert_allclose(
+        ef.portfolio_performance(), (target_return, vol_expected, sharpe_expected)
+    )
+    sharpe = ef.portfolio_performance()[2]
+    ef_long_only = setup_efficient_frontier()
+    ef_long_only.efficient_return(target_return)
+    long_only_sharpe = ef_long_only.portfolio_performance()[2]
+    assert long_only_sharpe < sharpe
 
 
 def test_efficient_return_market_neutral_warning():
     # This fails
     ef = setup_efficient_frontier()
-    with warnings.catch_warnings(record=True) as w:
+    with pytest.warns(RuntimeWarning) as w:
         ef.efficient_return(0.25, market_neutral=True)
         assert len(w) == 1
-        assert issubclass(w[0].category, RuntimeWarning)
         assert (
             str(w[0].message)
             == "Market neutrality requires shorting - bounds have been amended"
@@ -1064,7 +1233,7 @@ def test_max_sharpe_semicovariance():
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2972184894480104, 0.06443145011260347, 4.302533762060766),
+        (0.2762965426962885, 0.07372667096108301, 3.476307004714425),
     )
 
 
@@ -1080,7 +1249,7 @@ def test_max_sharpe_short_semicovariance():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.3564305116656491, 0.07201282488003401, 4.671813836300796),
+        (0.42444834528495234, 0.0898263632679403, 4.50255727350929),
     )
 
 
@@ -1100,7 +1269,7 @@ def test_min_volatilty_shrunk_L2_reg():
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.23127405291296832, 0.19563921371709164, 1.079916694096337),
+        (0.17358178582309983, 0.19563960638632416, 0.7850239972361532),
     )
 
 
@@ -1116,7 +1285,7 @@ def test_efficient_return_shrunk():
     np.testing.assert_almost_equal(ef.weights.sum(), 1)
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
-        ef.portfolio_performance(), (0.22, 0.0849639369932322, 2.353939884117318)
+        ef.portfolio_performance(), (0.22, 0.08892192396903059, 2.2491641101878916)
     )
 
 
@@ -1131,7 +1300,7 @@ def test_max_sharpe_exp_cov():
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.3678817256187322, 0.1753405505478982, 1.9840346373481956),
+        (0.33700887443850647, 0.1807332515488447, 1.7540152225548384),
     )
 
 
@@ -1147,7 +1316,7 @@ def test_min_volatility_exp_cov_L2_reg():
     assert all([i >= 0 for i in w.values()])
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.2434082300792007, 0.17835412793427002, 1.2526103694192867),
+        (0.1829496087575576, 0.17835412793427002, 0.9136295898775636),
     )
 
 
@@ -1164,6 +1333,6 @@ def test_efficient_risk_exp_cov_market_neutral():
     assert (ef.weights < 1).all() and (ef.weights > -1).all()
     np.testing.assert_allclose(
         ef.portfolio_performance(),
-        (0.3908928033782067, 0.18999999995323363, 1.9520673866815672),
+        (0.3934093962620499, 0.18999999989011893, 1.9653126130421081),
         atol=1e-6,
     )

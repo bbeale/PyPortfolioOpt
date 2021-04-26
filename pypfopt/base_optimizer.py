@@ -1,7 +1,7 @@
 """
 The ``base_optimizer`` module houses the parent classes ``BaseOptimizer`` from which all
-optimisers will inherit. ``BaseConvexOptimizer`` is the base class for all ``cvxpy`` (and ``scipy``)
-optimisation.
+optimizers will inherit. ``BaseConvexOptimizer`` is the base class for all ``cvxpy`` (and ``scipy``)
+optimization.
 
 Additionally, we define a general utility function ``portfolio_performance`` to
 evaluate return and risk for a given set of portfolio weights.
@@ -45,6 +45,7 @@ class BaseOptimizer:
             self.tickers = list(range(n_assets))
         else:
             self.tickers = tickers
+        self._risk_free_rate = None
         # Outputs
         self.weights = None
 
@@ -118,21 +119,23 @@ class BaseConvexOptimizer(BaseOptimizer):
 
     """
     The BaseConvexOptimizer contains many private variables for use by
-    ``cvxpy``. For example, the immutable optimisation variable for weights
-    is stored as self._w. Interacting directly with these variables is highly
-    discouraged.
+    ``cvxpy``. For example, the immutable optimization variable for weights
+    is stored as self._w. Interacting directly with these variables directly
+    is discouraged.
 
     Instance variables:
 
     - ``n_assets`` - int
     - ``tickers`` - str list
     - ``weights`` - np.ndarray
-    - ``solver`` - str
+    - ``_opt`` - cp.Problem
+    - ``_solver`` - str
+    - ``_solver_options`` - {str: str} dict
 
     Public methods:
 
-    - ``add_objective()`` adds a (convex) objective to the optimisation problem
-    - ``add_constraint()`` adds a (linear) constraint to the optimisation problem
+    - ``add_objective()`` adds a (convex) objective to the optimization problem
+    - ``add_constraint()`` adds a constraint to the optimization problem
     - ``convex_objective()`` solves for a generic convex objective with linear constraints
     - ``nonconvex_objective()`` solves for a generic nonconvex objective using the scipy backend.
       This is prone to getting stuck in local minima and is generally *not* recommended.
@@ -141,16 +144,30 @@ class BaseConvexOptimizer(BaseOptimizer):
     - ``save_weights_to_file()`` saves the weights to csv, json, or txt.
     """
 
-    def __init__(self, n_assets, tickers=None, weight_bounds=(0, 1)):
+    def __init__(
+        self,
+        n_assets,
+        tickers=None,
+        weight_bounds=(0, 1),
+        solver=None,
+        verbose=False,
+        solver_options=None,
+    ):
         """
         :param weight_bounds: minimum and maximum weight of each asset OR single min/max pair
                               if all identical, defaults to (0, 1). Must be changed to (-1, 1)
                               for portfolios with shorting.
         :type weight_bounds: tuple OR tuple list, optional
+        :param solver: name of solver. list available solvers with: ``cvxpy.installed_solvers()``
+        :type solver: str, optional. Defaults to "ECOS"
+        :param verbose: whether performance and debugging info should be printed, defaults to False
+        :type verbose: bool, optional
+        :param solver_options: parameters for the given solver
+        :type solver_options: dict, optional
         """
         super().__init__(n_assets, tickers)
 
-        # Optimisation variables
+        # Optimization variables
         self._w = cp.Variable(n_assets)
         self._objective = None
         self._additional_objectives = []
@@ -159,11 +176,14 @@ class BaseConvexOptimizer(BaseOptimizer):
         self._upper_bounds = None
         self._map_bounds_to_constraints(weight_bounds)
 
-        self.solver = None
+        self._opt = None
+        self._solver = solver
+        self._verbose = verbose
+        self._solver_options = solver_options if solver_options else {}
 
     def _map_bounds_to_constraints(self, test_bounds):
         """
-        Process input bounds into a form acceptable by cvxpy and add to the constraints list.
+        Convert input bounds into a form acceptable by cvxpy and add to the constraints list.
 
         :param test_bounds: minimum and maximum weight of each asset OR single min/max pair
                             if all identical OR pair of arrays corresponding to lower/upper bounds. defaults to (0, 1).
@@ -209,16 +229,21 @@ class BaseConvexOptimizer(BaseOptimizer):
         :raises exceptions.OptimizationError: if problem is not solvable by cvxpy
         """
         try:
-            opt = cp.Problem(cp.Minimize(self._objective), self._constraints)
+            self._opt = cp.Problem(cp.Minimize(self._objective), self._constraints)
 
-            if self.solver is not None:
-                opt.solve(solver=self.solver, verbose=True)
+            if self._solver is not None:
+                self._opt.solve(
+                    solver=self._solver, verbose=self._verbose, **self._solver_options
+                )
             else:
-                opt.solve()
-        except (TypeError, cp.DCPError):
-            raise exceptions.OptimizationError
-        if opt.status != "optimal":
-            raise exceptions.OptimizationError
+                self._opt.solve(verbose=self._verbose, **self._solver_options)
+        except (TypeError, cp.DCPError) as e:
+            raise exceptions.OptimizationError from e
+
+        if self._opt.status not in {"optimal", "optimal_inaccurate"}:
+            raise exceptions.OptimizationError(
+                "Solver status: {}".format(self._opt.status)
+            )
         self.weights = self._w.value.round(16) + 0.0  # +0.0 removes signed zero
         return self._make_output_weights()
 
@@ -241,8 +266,8 @@ class BaseConvexOptimizer(BaseOptimizer):
 
     def add_constraint(self, new_constraint):
         """
-        Add a new constraint to the optimisation problem. This constraint must be linear and
-        must be either an equality or simple inequality.
+        Add a new constraint to the optimization problem. This constraint must satisfy DCP rules,
+        i.e be either a linear equality constraint or convex inequality constraint.
 
         Examples::
 
@@ -275,7 +300,7 @@ class BaseConvexOptimizer(BaseOptimizer):
             sector_lower = {"tech": 0.1}  # at least 10% to tech
             sector_upper = {
                 "tech": 0.4, # less than 40% tech
-                "Oil/Gas: 0.1 # less than 10% oil and gas
+                "Oil/Gas": 0.1 # less than 10% oil and gas
             }
 
         :param sector_mapper: dict that maps tickers to sectors
@@ -298,12 +323,12 @@ class BaseConvexOptimizer(BaseOptimizer):
 
     def convex_objective(self, custom_objective, weights_sum_to_one=True, **kwargs):
         """
-        Optimise a custom convex objective function. Constraints should be added with
-        ``ef.add_constraint()``. Optimiser arguments must be passed as keyword-args. Example::
+        Optimize a custom convex objective function. Constraints should be added with
+        ``ef.add_constraint()``. Optimizer arguments must be passed as keyword-args. Example::
 
             # Could define as a lambda function instead
             def logarithmic_barrier(w, cov_matrix, k=0.1):
-                # 60 Years of Portfolio Optimisation, Kolm et al (2014)
+                # 60 Years of Portfolio Optimization, Kolm et al (2014)
                 return cp.quad_form(w, cov_matrix) - k * cp.sum(cp.log(w))
 
             w = ef.convex_objective(logarithmic_barrier, cov_matrix=ef.cov_matrix)
@@ -335,11 +360,12 @@ class BaseConvexOptimizer(BaseOptimizer):
         weights_sum_to_one=True,
         constraints=None,
         solver="SLSQP",
+        initial_guess=None,
     ):
         """
-        Optimise some objective function using the scipy backend. This can
-        support nonconvex objectives and nonlinear constraints, but often gets stuck
-        at local minima. This method is not recommended – caveat emptor. Example::
+        Optimize some objective function using the scipy backend. This can
+        support nonconvex objectives and nonlinear constraints, but may get stuck
+        at local minima. Example::
 
             # Market-neutral efficient risk
             constraints = [
@@ -366,9 +392,11 @@ class BaseConvexOptimizer(BaseOptimizer):
         :param constraints: list of constraints in the scipy format (i.e dicts)
         :type constraints: dict list
         :param solver: which SCIPY solver to use, e.g "SLSQP", "COBYLA", "BFGS".
-                       User beware: different optimisers require different inputs.
+                       User beware: different optimizers require different inputs.
         :type solver: string
-        :return: asset weights that optimise the custom objective
+        :param initial_guess: the initial guess for the weights, shape (n,) or (n, 1)
+        :type initial_guess: np.ndarray
+        :return: asset weights that optimize the custom objective
         :rtype: OrderedDict
         """
         # Sanitise inputs
@@ -379,7 +407,8 @@ class BaseConvexOptimizer(BaseOptimizer):
         bound_array = np.vstack((self._lower_bounds, self._upper_bounds)).T
         bounds = list(map(tuple, bound_array))
 
-        initial_guess = np.array([1 / self.n_assets] * self.n_assets)
+        if initial_guess is None:
+            initial_guess = np.array([1 / self.n_assets] * self.n_assets)
 
         # Construct constraints
         final_constraints = []

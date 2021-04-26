@@ -8,17 +8,53 @@ Roadmap and Changelog
 Roadmap
 =======
 
-These are some of the things that I am thinking of adding in the near future. If you
-have any other feature requests, please raise them using GitHub
+These are some of the features that I think would greatly improve PyPortfolioOpt; if you
+are interested in implementing one of these, raise an issue or send me an email and we can
+discuss. If you have any other feature requests, please raise them using GitHub
 `issues <https://github.com/robertmartin8/PyPortfolioOpt/issues>`_
 
-- Optimising for higher moments (i.e skew and kurtosis)
-- Factor modelling: doable but not sure if it fits within the API.
-- Proper CVaR optimisation – remove NoisyOpt and use linear programming
-- Monte Carlo optimisation with custom distributions
 - Open-source backtests using either `Backtrader <https://www.backtrader.com/>`_ or
   `Zipline <https://github.com/quantopian/zipline>`_.
+- Risk parity
+- Optimising for higher moments (i.e skew and kurtosis)
+- Factor modelling - this is conceptually doable, but a lot of thought needs to be put into the API.
+- Monte Carlo optimization with custom distributions
 - Further support for different risk/return models
+
+1.4.0
+=====
+
+- Finally implemented CVaR optimization! This has been one of the most requested features. Many thanks
+  to `Nicolas Knudde <https://github.com/nknudde>`_ for the initial draft. 
+- Re-architected plotting so users can pass an ax, allowing for complex plots (see cookbook).
+- Helper method to compute the max-return portfolio (thanks to `Philipp Schiele <https://github.com/phschiele>`_)
+  for the suggestion). 
+- Several bug fixes and test improvements (thanks to `Carl Peasnell <https://github.com/SeaPea1>`_).
+
+1.4.1
+-----
+
+- 100% test coverage
+- Reorganised docs; added FAQ page
+- Reorganised module structure to make it more scalable
+- Python 3.9 support, dockerfile versioning, misc packaging improvements (e.g cvxopt optional)
+
+
+1.3.0
+=====
+
+- Significantly improved plotting functionality: can now plot constrained efficient frontier!
+- Efficient semivariance portfolios (thanks to `Philipp Schiele <https://github.com/phschiele>`_)
+- Improved functionality for portfolios with short positions (thanks to `Rich Caputo <https://github.com/arcaputo3>`_).
+- Significant improvement in test coverage (thanks to `Carl Peasnell <https://github.com/SeaPea1>`_).
+- Several bug fixes and usability improvements.
+- Migrated from TravisCI to Github Actions.
+
+1.3.1
+-----
+
+- Minor cleanup (forgotten commits from v1.3.0).
+
 
 1.2.0
 =====
@@ -29,7 +65,6 @@ have any other feature requests, please raise them using GitHub
 - Improved error tracebacks
 - Adding new cookbook for examples (in progress).
 - Packaging: added bettter instructions for windows, added docker support.
-
 
 1.2.1
 -----
@@ -48,6 +83,36 @@ Matplotlib now required dependency; support for pandas 1.0.
 - Changed dict to OrderedDict to support python 3.5
 - Improved packaging/dependencies: simplified requirements.txt, improved processes before pushing.
 
+1.2.4
+-----
+
+- Fixed bug in Ledoit-Wolf shrinkage calculation.
+- Fixed bug in plotting docs that caused them not to render. 
+
+1.2.5
+-----
+
+- Fixed compounding in ``expected_returns`` (thanks to `Aditya Bhutra <https://github.com/bhutraaditya>`_).
+- Improvements in advanced cvxpy API (thanks to `Pat Newell <https://github.com/pmn4>`_).
+- Deprecating James-Stein
+- Exposed ``linkage_method`` in HRP. 
+- Added support for cvxpy 1.1.
+- Added an error check for ``efficient_risk``. 
+- Small improvements to docs.
+
+1.2.6
+-----
+
+- Fixed order-dependence bug in Black-Litterman ``market_implied_prior_returns``
+- Fixed inaccuracy in BL cookbook.
+- Fixed bug in exponential covariance.
+
+1.2.7
+-----
+
+- Fixed bug which required conservative risk targets for long/short portfolios.
+
+
 1.1.0
 =====
 
@@ -63,7 +128,6 @@ Matplotlib now required dependency; support for pandas 1.0.
   - Introduced a new API, in which the function ``expected_returns.return_model(method="...")`` allows
     all the different return models to be called. This should make testing easier.
   - Added option to 'properly' compound returns.
-  - Added the James-Stein shrinkage estimator
   - Added the CAPM return model.
 
 - ``from pypfopt import plotting``: moved all plotting functionality into a new class and added
@@ -89,7 +153,7 @@ Matplotlib now required dependency; support for pandas 1.0.
   
   - Replaced ``BaseScipyOptimizer`` with ``BaseConvexOptimizer``
   - ``hierarchical_risk_parity`` was replaced by ``hierarchical_portfolios`` to leave the door open for other hierarchical methods.
-  - Sadly, removed CVaR optimisation for the time being until I can properly fix it.
+  - Sadly, removed CVaR optimization for the time being until I can properly fix it.
 
 1.0.1
 -----
@@ -100,7 +164,7 @@ Fixed minor issues in CLA: weight bound bug, ``efficient_frontier`` needed weigh
 -----
 
 Fixed small but important bug where passing ``expected_returns=None`` fails. According to the docs, users
-should be able to only pass covariance if they want to only optimise min volatility.
+should be able to only pass covariance if they want to only optimize min volatility.
 
 
 0.5.0
@@ -110,7 +174,7 @@ should be able to only pass covariance if they want to only optimise min volatil
 - Custom bounds per asset
 - Improved ``BaseOptimizer``, adding a method that writes weights
   to text and fixing a bug in ``set_weights``.
-- Unconstrained quadratic utility optimisation (analytic)
+- Unconstrained quadratic utility optimization (analytic)
 - Revamped docs, with information on types of attributes and
   more examples.
 
@@ -128,9 +192,9 @@ experience.
 0.5.3
 -----
 
-- Fixed an optimisation bug in ``EfficientFrontier.efficient_risk``. An error is now
-  thrown if optimisation fails.
-- Added a hidden API to change the scipy optimiser method. 
+- Fixed an optimization bug in ``EfficientFrontier.efficient_risk``. An error is now
+  thrown if optimization fails.
+- Added a hidden API to change the scipy optimizer method. 
 
 0.5.4
 -----
@@ -153,7 +217,7 @@ Began migration to cvxpy by changing the discrete allocation backend from PuLP t
   modified the linear programming method suggested by `Dingyuan Wang <https://github.com/gumblex>`_;
   added postprocessing section to User Guide.
 - Further refactoring and docs for ``HRPOpt``.
-- Major documentation update, e.g to support custom optimisers
+- Major documentation update, e.g to support custom optimizers
 
 0.4.1
 -----
@@ -209,13 +273,13 @@ Refactored shrinkage models, including single factor and constant correlation.
 0.2.0
 =====
 
-- Hierarchical Risk Parity optimisation
+- Hierarchical Risk Parity optimization
 - Semicovariance matrix
 - Exponential covariance matrix
-- CVaR optimisation
+- CVaR optimization
 - Better support for custom objective functions
 - Multiple bug fixes (including minimum volatility vs minimum variance)
-- Refactored so all optimisers inherit from a ``BaseOptimizer``.
+- Refactored so all optimizers inherit from a ``BaseOptimizer``.
 
 0.2.1
 -----

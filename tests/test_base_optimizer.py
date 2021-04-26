@@ -1,10 +1,23 @@
 import json
 import os
 import numpy as np
+import pandas as pd
 import pytest
+import cvxpy as cp
 from pypfopt import EfficientFrontier
 from pypfopt import exceptions
+from pypfopt.base_optimizer import portfolio_performance, BaseOptimizer
 from tests.utilities_for_tests import get_data, setup_efficient_frontier
+
+
+def test_base_optimizer():
+    """ Cover code not covered elsewhere."""
+    # Test tickers not provided
+    bo = BaseOptimizer(2)
+    assert bo.tickers == [0, 1]
+    w = {0: 0.4, 1: 0.6}
+    bo.set_weights(w)
+    assert dict(bo.clean_weights()) == w
 
 
 def test_custom_bounds():
@@ -43,10 +56,6 @@ def test_weight_bounds_minus_one_to_one():
     assert ef.max_sharpe()
     assert ef.min_volatility()
 
-    # TODO: fix
-    # assert ef.efficient_return(0.05)
-    # assert ef.efficient_risk(0.20)
-
 
 def test_none_bounds():
     ef = EfficientFrontier(
@@ -84,7 +93,7 @@ def test_bound_input_types():
 
 
 def test_bound_failure():
-    # Ensure optimisation fails when lower bound is too high or upper bound is too low
+    # Ensure optimization fails when lower bound is too high or upper bound is too low
     ef = EfficientFrontier(
         *setup_efficient_frontier(data_only=True), weight_bounds=(0.06, 0.13)
     )
@@ -201,5 +210,72 @@ def test_save_weights_to_file():
         parsed = json.load(f)
     assert ef.clean_weights() == parsed
 
+    ef.save_weights_to_file("tests/test.csv")
+    with open("tests/test.csv", "r") as f:
+        df = pd.read_csv(
+            f,
+            header=None,
+            names=["ticker", "weight"],
+            index_col=0,
+            float_precision="high",
+        )
+    parsed = df["weight"].to_dict()
+    assert ef.clean_weights() == parsed
+
     os.remove("tests/test.txt")
     os.remove("tests/test.json")
+    os.remove("tests/test.csv")
+
+    with pytest.raises(NotImplementedError):
+        ef.save_weights_to_file("tests/test.xml")
+
+
+def test_portfolio_performance():
+    """
+    Cover logic in base_optimizer.portfolio_performance not covered elsewhere.
+    """
+    ef = setup_efficient_frontier()
+    ef.min_volatility()
+    expected = ef.portfolio_performance()
+
+    # Cover verbose logic
+    assert (
+        portfolio_performance(ef.weights, ef.expected_returns, ef.cov_matrix, True)
+        == expected
+    )
+    # including when used without expected returns too.
+    assert portfolio_performance(ef.weights, None, ef.cov_matrix, True) == (
+        None,
+        expected[1],
+        None,
+    )
+    # Internal ticker creations when weights param is a dict and ...
+    w_dict = dict(zip(ef.tickers, ef.weights))
+    # ... expected_returns is a Series
+    er = pd.Series(ef.expected_returns, index=ef.tickers)
+    assert portfolio_performance(w_dict, er, ef.cov_matrix) == expected
+    # ... cov_matrix is a DataFrame
+    cov = pd.DataFrame(data=ef.cov_matrix, index=ef.tickers, columns=ef.tickers)
+    assert portfolio_performance(w_dict, ef.expected_returns, cov) == expected
+
+    # Will only support 'tickers' as dict keys that are ints starting from zero.
+    w_dict = dict(zip(range(len(ef.weights)), ef.weights))
+    assert portfolio_performance(w_dict, ef.expected_returns, ef.cov_matrix) == expected
+
+    # Weights must not sum to zero.
+    w_dict = dict(zip(range(len(ef.weights)), np.zeros(len(ef.weights))))
+    with pytest.raises(ValueError):
+        portfolio_performance(w_dict, ef.expected_returns, ef.cov_matrix)
+
+
+def test_add_constraint_exception():
+    ef = setup_efficient_frontier()
+    # Must be callable.
+    with pytest.raises(TypeError):
+        ef.add_constraint(42)
+
+
+def test_problem_access():
+    ef = setup_efficient_frontier()
+    ef.max_sharpe()
+    assert isinstance(ef._opt, cp.Problem)

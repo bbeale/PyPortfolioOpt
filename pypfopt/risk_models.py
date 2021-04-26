@@ -39,7 +39,8 @@ def _is_positive_semidefinite(matrix):
     :rtype: bool
     """
     try:
-        np.linalg.cholesky(matrix)
+        # Significantly more efficient than checking eigenvalues (stackoverflow.com/questions/16266720)
+        np.linalg.cholesky(matrix + 1e-16 * np.eye(len(matrix)))
         return True
     except np.linalg.LinAlgError:
         return False
@@ -63,35 +64,36 @@ def fix_nonpositive_semidefinite(matrix, fix_method="spectral"):
     """
     if _is_positive_semidefinite(matrix):
         return matrix
+
+    warnings.warn(
+        "The covariance matrix is non positive semidefinite. Amending eigenvalues."
+    )
+
+    # Eigendecomposition
+    q, V = np.linalg.eigh(matrix)
+
+    if fix_method == "spectral":
+        # Remove negative eigenvalues
+        q = np.where(q > 0, q, 0)
+        # Reconstruct matrix
+        fixed_matrix = V @ np.diag(q) @ V.T
+    elif fix_method == "diag":
+        min_eig = np.min(q)
+        fixed_matrix = matrix - 1.1 * min_eig * np.eye(len(matrix))
     else:
+        raise NotImplementedError("Method {} not implemented".format(fix_method))
+
+    if not _is_positive_semidefinite(fixed_matrix):  # pragma: no cover
         warnings.warn(
-            "The covariance matrix is non positive semidefinite. Amending eigenvalues."
+            "Could not fix matrix. Please try a different risk model.", UserWarning
         )
 
-        # Eigendecomposition
-        q, V = np.linalg.eigh(matrix)
-
-        if fix_method == "spectral":
-            # Remove negative eigenvalues
-            q = np.where(q > 0, q, 0)
-            # Reconstruct matrix
-            fixed_matrix = V @ np.diag(q) @ V.T
-        elif fix_method == "diag":
-            min_eig = np.min(q)
-            if min_eig < 0:
-                fixed_matrix = matrix - 1.1 * min_eig * np.eye(len(matrix))
-        else:
-            raise NotImplementedError("Method {} not implemented".format(fix_method))
-
-        if not _is_positive_semidefinite(fixed_matrix):
-            warnings.warn("Could not fix matrix. Please try a different risk model.")
-
-        # Rebuild labels if provided
-        if isinstance(matrix, pd.DataFrame):
-            tickers = matrix.index
-            return pd.DataFrame(fixed_matrix, index=tickers, columns=tickers)
-        else:
-            return fixed_matrix
+    # Rebuild labels if provided
+    if isinstance(matrix, pd.DataFrame):
+        tickers = matrix.index
+        return pd.DataFrame(fixed_matrix, index=tickers, columns=tickers)
+    else:
+        return fixed_matrix
 
 
 def risk_matrix(prices, method="sample_cov", **kwargs):
@@ -109,7 +111,6 @@ def risk_matrix(prices, method="sample_cov", **kwargs):
         - ``sample_cov``
         - ``semicovariance``
         - ``exp_cov``
-        - ``min_cov_determinant``
         - ``ledoit_wolf``
         - ``ledoit_wolf_constant_variance``
         - ``ledoit_wolf_single_factor``
@@ -123,12 +124,10 @@ def risk_matrix(prices, method="sample_cov", **kwargs):
     """
     if method == "sample_cov":
         return sample_cov(prices, **kwargs)
-    elif method == "semicovariance":
+    elif method == "semicovariance" or method == "semivariance":
         return semicovariance(prices, **kwargs)
     elif method == "exp_cov":
         return exp_cov(prices, **kwargs)
-    elif method == "min_cov_determinant":
-        return min_cov_determinant(prices, **kwargs)
     elif method == "ledoit_wolf" or method == "ledoit_wolf_constant_variance":
         return CovarianceShrinkage(prices, **kwargs).ledoit_wolf()
     elif method == "ledoit_wolf_single_factor":
@@ -204,8 +203,9 @@ def semicovariance(
     else:
         returns = returns_from_prices(prices)
     drops = np.fmin(returns - benchmark, 0)
+    T = drops.shape[0]
     return fix_nonpositive_semidefinite(
-        drops.cov() * frequency, kwargs.get("fix_method", "spectral")
+        (drops.T @ drops) / T * frequency, kwargs.get("fix_method", "spectral")
     )
 
 
@@ -226,7 +226,7 @@ def _pair_exp_cov(X, Y, span=180):
     # Exponentially weight the covariation and take the mean
     if span < 10:
         warnings.warn("it is recommended to use a higher span, e.g 30 days")
-    return covariation.ewm(span=span).mean()[-1]
+    return covariation.ewm(span=span).mean().iloc[-1]
 
 
 def exp_cov(prices, returns_data=False, span=180, frequency=252, **kwargs):
@@ -271,24 +271,9 @@ def exp_cov(prices, returns_data=False, span=180, frequency=252, **kwargs):
 
 def min_cov_determinant(
     prices, returns_data=False, frequency=252, random_state=None, **kwargs
-):
-    """
-    Calculate the minimum covariance determinant, an estimator of the covariance matrix
-    that is more robust to noise.
+):  # pragma: no cover
+    warnings.warn("min_cov_determinant is deprecated and will be removed in v1.5")
 
-    :param prices: adjusted closing prices of the asset, each row is a date
-                   and each column is a ticker/id.
-    :type prices: pd.DataFrame
-    :param returns_data: if true, the first argument is returns instead of prices.
-    :type returns_data: bool, defaults to False.
-    :param frequency: number of time periods in a year, defaults to 252 (the number
-                      of trading days in a year)
-    :type frequency: int, optional
-    :param random_state: random seed to make results reproducible, defaults to None
-    :type random_state: int, optional
-    :return: annualised estimate of covariance matrix
-    :rtype: pd.DataFrame
-    """
     if not isinstance(prices, pd.DataFrame):
         warnings.warn("data is not in a dataframe", RuntimeWarning)
         prices = pd.DataFrame(prices)
@@ -302,10 +287,11 @@ def min_cov_determinant(
     assets = prices.columns
 
     if returns_data:
-        X = prices.dropna(how="all")
+        X = prices
     else:
-        X = prices.pct_change().dropna(how="all")
-    X = np.nan_to_num(X.values)
+        X = returns_from_prices(prices)
+    # X = np.nan_to_num(X.values)
+    X = X.dropna().values
     raw_cov_array = sklearn.covariance.fast_mcd(X, random_state=random_state)[1]
     cov = pd.DataFrame(raw_cov_array, index=assets, columns=assets) * frequency
     return fix_nonpositive_semidefinite(cov, kwargs.get("fix_method", "spectral"))
@@ -341,7 +327,7 @@ def corr_to_cov(corr_matrix, stdevs):
     :rtype: pd.DataFrame
     """
     if not isinstance(corr_matrix, pd.DataFrame):
-        warnings.warn("cov_matrix is not a dataframe", RuntimeWarning)
+        warnings.warn("corr_matrix is not a dataframe", RuntimeWarning)
         corr_matrix = pd.DataFrame(corr_matrix)
 
     return corr_matrix * np.outer(stdevs, stdevs)
@@ -376,7 +362,7 @@ class CovarianceShrinkage:
             from sklearn import covariance
 
             self.covariance = covariance
-        except (ModuleNotFoundError, ImportError):
+        except (ModuleNotFoundError, ImportError):  # pragma: no cover
             raise ImportError("Please install scikit-learn via pip or poetry")
 
         if not isinstance(prices, pd.DataFrame):
@@ -539,8 +525,8 @@ class CovarianceShrinkage:
         pi_hat = np.sum(pi_mat)
 
         # Theta matrix, expanded term by term
-        term1 = np.dot((X ** 3).T, X) / t
-        help_ = np.dot(X.T, X) / t
+        term1 = np.dot((Xm ** 3).T, Xm) / t
+        help_ = np.dot(Xm.T, Xm) / t
         help_diag = np.diag(help_)
         term2 = np.tile(help_diag, (n, 1)).T * S
         term3 = help_ * _var
